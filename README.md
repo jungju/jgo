@@ -103,17 +103,14 @@ I do not permit the human system of hiring for this being.
   - partial run: `make run-partial PROMPT="작업 지시"`
   - full run (direct CLI): `make run-full PROMPT="작업 지시"`
 
-Examples:
-
-```bash
-jgo run --env-file .env "owner/repo README 업데이트해줘"
-jgo exec --env-file .env "owner/repo README 업데이트하고 커밋/푸시해줘"
-jgo exec --env-file .env --optimize-prompt "owner/repo README 업데이트하고 커밋/푸시해줘"
-```
-
 Makefile examples:
 
 ```bash
+# 0) jgo CLI 직접 실행 예시
+jgo run --env-file .env "owner/repo README 업데이트해줘"
+jgo exec --env-file .env "owner/repo README 업데이트하고 커밋/푸시해줘"
+jgo exec --env-file .env --optimize-prompt "owner/repo README 업데이트하고 커밋/푸시해줘"
+
 # 1) 프롬프트 최적화 결과만 보기
 make run-partial PROMPT="owner/repo README 업데이트"
 
@@ -131,6 +128,9 @@ make run-full PROMPT="owner/repo 배포 매니페스트를 점검하고 필요�
 
 # 5) 접근 가능한 Repo 전부 나열 요청
 make run-full PROMPT="접근 가능한 Repo 전부 나열해줘"
+
+# 6) Kubernetes + 도메인(Ingress) 작업 요청
+make run-full PROMPT="k8s에 xxx.okgo.click으로 nginx 띄어줘"
 ```
 
 ## Request Lifecycle (API -> Codex)
