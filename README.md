@@ -182,6 +182,8 @@ jgo-first-run-checklist
 - `homefiles`를 `/home/jgo/`로 최초 1회 복사한다.
 - 최초 복사 시 marker file (`/home/jgo/.jgo-homefiles-initialized`)을 생성한다.
 - marker file이 있으면 재실행해도 `homefiles` 복사를 건너뛴다.
+- `~/.ssh/id_ed25519`, `~/.ssh/id_ed25519.pub`를 준비한다.
+- `~/.ssh/authorized_keys`에 `~/.ssh/id_ed25519.pub`를 포함한다.
 - 최초 복사 시 `~/.codex/config.toml`에 아래 설정을 보장한다.
   - `[sandbox_workspace_write]`
   - `network_access = true`
@@ -212,9 +214,6 @@ jgo-first-run-checklist
     - `OPENAI_BASE_URL` is optional (default: `https://api.openai.com/v1`)
     - To use OpenWebUI/LiteLLM endpoint, set `OPENAI_BASE_URL` explicitly
 - Optional:
-  - `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default: `false`)
-    - `false`: add `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`
-    - `true`: use default SSH host key verification
   - `CODEX_BIN` (default: `codex`)
   - `JGO_LISTEN_ADDR` (default: `:8080`)
   - `JGO_OPTIMIZE_PROMPT` (default: `false`)
@@ -313,8 +312,6 @@ Codex 로그인 미완료 처리:
 
 - `codex login status`가 실패하면, API는 작업 실행 대신
   `codex가 로그인되어 있지 않습니다. 먼저 codex login을 실행...` 안내 메시지를 응답한다.
-- `Host key verification failed`가 발생하면 `JGO_SSH_STRICT_HOST_KEY_CHECKING=false`를 사용하거나
-  대상 서버의 host key를 known_hosts에 등록해야 한다.
 
 ## Runtime Flow
 

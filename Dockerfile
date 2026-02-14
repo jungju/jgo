@@ -97,6 +97,7 @@ RUN mkdir -p /var/run/sshd
 RUN sed -i 's/#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config && \
     sed -i 's/#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
     sed -i 's/#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's@#\?AuthorizedKeysFile .*@AuthorizedKeysFile .ssh/authorized_keys@' /etc/ssh/sshd_config && \
     sed -i 's/#\?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config && \
     sed -i 's/#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config || true && \
     { \
@@ -116,14 +117,6 @@ RUN useradd -m -s /bin/bash "${USERNAME}" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
     chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
-RUN install -d -m 700 -o "${USERNAME}" -g "${USERNAME}" "/home/${USERNAME}/.ssh" && \
-    touch "/home/${USERNAME}/.ssh/authorized_keys" && \
-    chmod 600 "/home/${USERNAME}/.ssh/authorized_keys" && \
-    cat /root/.ssh/id_ed25519.pub >> "/home/${USERNAME}/.ssh/authorized_keys" && \
-    awk '!seen[$0]++' "/home/${USERNAME}/.ssh/authorized_keys" > "/home/${USERNAME}/.ssh/authorized_keys.tmp" && \
-    mv "/home/${USERNAME}/.ssh/authorized_keys.tmp" "/home/${USERNAME}/.ssh/authorized_keys" && \
-    chown "${USERNAME}:${USERNAME}" "/home/${USERNAME}/.ssh/authorized_keys"
-
 RUN echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go.sh
 
 RUN cat > /usr/local/bin/entrypoint.sh <<'SH' && chmod +x /usr/local/bin/entrypoint.sh
@@ -132,8 +125,6 @@ set -euo pipefail
 
 USERNAME="${USERNAME:-jgo}"
 HOME_DIR="/home/${USERNAME}"
-SSH_DIR="${HOME_DIR}/.ssh"
-AUTH_KEYS="${SSH_DIR}/authorized_keys"
 
 if ! id -u "${USERNAME}" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "${USERNAME}"
@@ -143,21 +134,6 @@ if ! id -u "${USERNAME}" >/dev/null 2>&1; then
 fi
 
 mkdir -p /var/run/sshd
-mkdir -p "${SSH_DIR}"
-chmod 700 "${SSH_DIR}"
-touch "${AUTH_KEYS}"
-chmod 600 "${AUTH_KEYS}"
-
-if [ -f /tmp/authorized_key.pub ]; then
-  cat /tmp/authorized_key.pub >> "${AUTH_KEYS}"
-fi
-
-if [ -f /root/.ssh/id_ed25519.pub ]; then
-  cat /root/.ssh/id_ed25519.pub >> "${AUTH_KEYS}"
-fi
-
-awk '!seen[$0]++' "${AUTH_KEYS}" > "${AUTH_KEYS}.tmp" && mv "${AUTH_KEYS}.tmp" "${AUTH_KEYS}"
-chown -R "${USERNAME}:${USERNAME}" "${SSH_DIR}"
 
 /usr/sbin/sshd
 
@@ -180,7 +156,6 @@ SH
 WORKDIR /work
 ENV JGO_LISTEN_ADDR=:8080
 ENV GOMODCACHE=/opt/jgo/go-mod
-ENV JGO_SSH_STRICT_HOST_KEY_CHECKING=false
 
 EXPOSE 22 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

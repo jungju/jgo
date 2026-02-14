@@ -1,7 +1,7 @@
 # jgo SPEC (Frozen)
 
 - Project: `jgo`
-- Spec Version: `1.0.29`
+- Spec Version: `1.0.30`
 - Status: `FROZEN`
 - Last Updated: `2026-02-14`
 
@@ -51,7 +51,6 @@ Core intent:
    - execute codex commands through SSH target from env:
      - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`.
      - container default: `JGO_SSH_USER=jgo`, `JGO_SSH_HOST=localhost`, `JGO_SSH_PORT=22`.
-     - optional: `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default false).
    - include `--skip-git-repo-check` in codex exec command.
    - pass prompt as inline `codex exec` command argument (not via stdin).
    - execute codex once per automation request.
@@ -117,6 +116,8 @@ Core intent:
      - copies `homefiles` into `/home/jgo` once and sets ownership to `jgo`,
      - creates marker file `/home/jgo/.jgo-homefiles-initialized`,
      - skips homefiles copy when marker file already exists,
+     - ensures `~/.ssh/id_ed25519` / `~/.ssh/id_ed25519.pub`,
+     - ensures `~/.ssh/authorized_keys` includes `~/.ssh/id_ed25519.pub`,
      - ensures `[sandbox_workspace_write]` / `network_access = true` in `~/.codex/config.toml` on first copy.
 
 ## 6. Environment Requirements
@@ -140,7 +141,6 @@ Defaults:
 2. `CODEX_BIN=codex`
 3. `JGO_LISTEN_ADDR=:8080`
 4. `JGO_OPTIMIZE_PROMPT=false`
-5. `JGO_SSH_STRICT_HOST_KEY_CHECKING=false`
 
 Fallbacks:
 1. If `OPENAI_API_KEY` missing: fallback to `OPENWEBUI_API_KEY` then `LITELLM_API_KEY`.
@@ -164,6 +164,7 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 
 ## 9. Changelog
 
+- `1.0.30` (`2026-02-14`): simplified SSH host-key behavior in runtime/docs and extended first-run checklist to provision SSH key files plus `~/.ssh/authorized_keys` registration.
 - `1.0.29` (`2026-02-14`): renamed manual bootstrap script to `jgo-first-run-checklist`, added codex/gh/kubectl checks, and enforced one-time homefiles copy with marker-file guard.
 - `1.0.28` (`2026-02-14`): added manual `apply-homefiles` bootstrap script and included it in Docker image to copy `homefiles` into target home and enforce sandbox workspace-write network access config.
 - `1.0.27` (`2026-02-14`): renamed unified image definition to `Dockerfile` (removed `workspace.dockerfile`) and simplified Makefile push flow to a single image target.
@@ -185,7 +186,6 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 - `1.0.11` (`2026-02-14`): separated remote codex workspace root to avoid remote absolute-path permission errors.
 - `1.0.10` (`2026-02-14`): normalized legacy absolute cache path `/jgo-cache` to `.jgo-cache` for workspace execution compatibility.
 - `1.0.9` (`2026-02-14`): added fixed SSH key auto-generation/loading and startup public-key log; added SSH key-path override.
-- `1.0.8` (`2026-02-14`): added `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default `false`) to control SSH host key verification behavior.
 - `1.0.7` (`2026-02-14`): made SSH target settings required for execution (`JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`); removed localhost/22 defaults.
 - `1.0.6` (`2026-02-14`): prompt optimization is now optional for full automation; default OFF (`JGO_OPTIMIZE_PROMPT=false`) and can be enabled via `--optimize-prompt`.
 - `1.0.5` (`2026-02-13`): added `--skip-git-repo-check` to codex exec invocation.
