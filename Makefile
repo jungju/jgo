@@ -9,7 +9,7 @@ PROMPT_OPTIMIZE ?= false
 SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
 SSH_KEY_COMMENT ?= jgo-auto
 
-.PHONY: docker-push push serve run-partial run-full ssh-key
+.PHONY: docker-push push serve run-full ssh-key
 
 docker-push:
 	docker buildx build \
@@ -23,13 +23,6 @@ push: docker-push
 
 serve:
 	go run main.go serve
-
-run-partial:
-	@if [ -z "$(PROMPT)" ]; then \
-	  echo 'usage: make run-partial PROMPT="작업 지시"'; \
-	  exit 1; \
-	fi
-	go run main.go run --env-file $(ENV_FILE) "$(PROMPT)"
 
 run-full:
 	@if [ -z "$(PROMPT)" ]; then \

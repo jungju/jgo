@@ -166,11 +166,6 @@ func main() {
 			log.Printf("error: %v", err)
 			os.Exit(1)
 		}
-	case "run":
-		if err := runCommand(cfg, os.Args[2:]); err != nil {
-			log.Printf("error: %v", err)
-			os.Exit(1)
-		}
 	case "exec":
 		if err := execCommand(cfg, os.Args[2:]); err != nil {
 			log.Printf("error: %v", err)
@@ -208,47 +203,8 @@ func serveCommand(cfg Config, args []string) error {
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  jgo serve [--optimize-prompt]")
-	fmt.Fprintln(os.Stderr, "  jgo run [--env-file .env] \"<instruction>\"")
 	fmt.Fprintln(os.Stderr, "  jgo exec [--env-file .env] [--optimize-prompt] \"<instruction>\"")
 	fmt.Fprintln(os.Stderr, "default: jgo serve")
-}
-
-func runCommand(cfg Config, args []string) error {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	envFile := fs.String("env-file", ".env", "path to env file")
-
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("parse run args: %w", err)
-	}
-	if fs.NArg() == 0 {
-		return fmt.Errorf("missing instruction argument")
-	}
-
-	instruction := strings.TrimSpace(strings.Join(fs.Args(), " "))
-	if instruction == "" {
-		return fmt.Errorf("instruction cannot be empty")
-	}
-
-	if path := strings.TrimSpace(*envFile); path != "" {
-		if err := loadEnvFile(path); err != nil {
-			return fmt.Errorf("load env file (%s): %w", path, err)
-		}
-	}
-	reloadedCfg, err := loadConfigFromEnv()
-	if err != nil {
-		return err
-	}
-	cfg = reloadedCfg
-	if err := validateSSHConfig(&cfg); err != nil {
-		return err
-	}
-
-	runID := nextRunID()
-	ctx := context.WithValue(context.Background(), runIDContextKey{}, runID)
-	logRunf(ctx, "cli run start: mode=prompt_optimize_only env_file=%q", strings.TrimSpace(*envFile))
-	return runPromptOptimizeOnly(ctx, cfg, instruction)
 }
 
 func execCommand(cfg Config, args []string) error {
@@ -748,34 +704,6 @@ func runAutomation(ctx context.Context, cfg Config, instruction string) (Automat
 	return AutomationResult{
 		CodexResponse: codexOutput,
 	}, nil
-}
-
-func runPromptOptimizeOnly(ctx context.Context, cfg Config, instruction string) error {
-	envMap := environToMap(os.Environ())
-	applyProviderFallbacks(envMap)
-
-	openaiCfg, err := loadOpenAIConfig(envMap)
-	if err != nil {
-		return err
-	}
-	availableCLIs := resolveAvailableCLIs(envMap, cfg.CodexBin)
-
-	logRunf(
-		ctx,
-		"prompt_optimize_only: base_url=%s model=%s available_clis=%s",
-		sanitizeURL(openaiCfg.BaseURL),
-		openaiCfg.Model,
-		strings.Join(availableCLIs, ", "),
-	)
-
-	plan, err := analyzeRequest(ctx, openaiCfg, instruction, availableCLIs)
-	if err != nil {
-		return fmt.Errorf("prompt optimize: %w", err)
-	}
-	if _, err := fmt.Fprintln(os.Stdout, plan.OptimizedPrompt); err != nil {
-		return fmt.Errorf("print optimized prompt: %w", err)
-	}
-	return nil
 }
 
 func loadOpenAIConfig(env map[string]string) (OpenAIConfig, error) {
