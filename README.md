@@ -14,12 +14,12 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 ## 현재 개발 구조 (파일/이미지 기준)
 
 - Core runtime:
-  - `main.go`: API/CLI 엔트리포인트(`serve`/`run`/`exec`)와 자동화 오케스트레이션 전체를 단일 파일로 유지.
+  - `main.go`: API/CLI 엔트리포인트(`serve`/`exec`)와 자동화 오케스트레이션 전체를 단일 파일로 유지.
   - `docker-entrypoint.sh`: 컨테이너 캐시 경로(`.jgo-cache`)를 준비하고 `go run /opt/jgo/main.go` 실행.
 - Container images:
   - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
 - Tooling:
-  - `Makefile`: `docker-push`, `push`, `run-partial`, `run-full`, `ssh-key` 제공.
+  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key` 제공.
 
 ## 서비스 구조 요약
 
@@ -88,48 +88,40 @@ I do not permit the human system of hiring for this being.
 
 ## CLI Mode
 
-- `jgo run` supports local CLI execution with `.env` file loading.
-- `jgo run` executes Step 1 only (prompt optimization preview).
-- It prints optimized prompt text only and does not run repository edit/commit/push.
 - `jgo exec` executes full automation directly from CLI (no API server required).
 - Successful `jgo exec` output is limited to raw `codex exec` response text (no wrapper/fallback JSON).
 - Prompt optimization in full automation is optional and default is OFF.
 - Enable optimization with `--optimize-prompt` or `JGO_OPTIMIZE_PROMPT=true`.
-- `jgo run` / `jgo exec` default `--env-file .env`:
+- `jgo exec` default `--env-file .env`:
   - if `.env` is missing, command fails
   - pass `--env-file ""` to skip file loading
-- All modes (`serve`/`run`/`exec`) validate SSH settings first.
+- All modes (`serve`/`exec`) validate SSH settings first.
 - `Makefile` shortcuts:
-  - partial run: `make run-partial PROMPT="작업 지시"`
   - full run (direct CLI): `make run-full PROMPT="작업 지시"`
 
 Makefile examples:
 
 ```bash
 # 0) jgo CLI 직접 실행 예시
-jgo run --env-file .env "owner/repo README 업데이트해줘"
 jgo exec --env-file .env "owner/repo README 업데이트하고 커밋/푸시해줘"
 jgo exec --env-file .env --optimize-prompt "owner/repo README 업데이트하고 커밋/푸시해줘"
 
-# 1) 프롬프트 최적화 결과만 보기
-make run-partial PROMPT="owner/repo README 업데이트"
-
-# 2) 전체 실행 요청 (CLI 직접 실행)
+# 1) 전체 실행 요청 (CLI 직접 실행)
 make run-full PROMPT="owner/repo README 업데이트하고 커밋/푸시"
 
-# 2-1) 전체 실행 + 프롬프트 최적화 ON
+# 1-1) 전체 실행 + 프롬프트 최적화 ON
 make run-full PROMPT_OPTIMIZE=true PROMPT="owner/repo README 업데이트하고 커밋/푸시"
 
-# 3) GitHub URL 형태 요청
+# 2) GitHub URL 형태 요청
 make run-full PROMPT="https://github.com/owner/repo 이슈 템플릿 추가하고 커밋/푸시"
 
-# 4) Kubernetes 관련 작업 요청
+# 3) Kubernetes 관련 작업 요청
 make run-full PROMPT="owner/repo 배포 매니페스트를 점검하고 필요한 수정 후 커밋/푸시"
 
-# 5) 접근 가능한 Repo 전부 나열 요청
+# 4) 접근 가능한 Repo 전부 나열 요청
 make run-full PROMPT="접근 가능한 Repo 전부 나열해줘"
 
-# 6) Kubernetes + 도메인(Ingress) 작업 요청
+# 5) Kubernetes + 도메인(Ingress) 작업 요청
 make run-full PROMPT="k8s에 xxx.okgo.click으로 nginx 띄어줘"
 ```
 
@@ -206,7 +198,6 @@ jgo-first-run-checklist
   - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`
 - Required when prompt optimization runs:
   - cases:
-    - `jgo run`
     - `jgo exec --optimize-prompt`
     - `jgo serve --optimize-prompt` (or `JGO_OPTIMIZE_PROMPT=true`)
   - effective OpenAI settings:
@@ -225,7 +216,7 @@ jgo-first-run-checklist
   - AWS/GitHub/Kubernetes-related variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, etc.)
 
 `jgo` reads process environment only.
-`jgo run` / `jgo exec` can preload environment variables from `.env` via `--env-file`.
+`jgo exec` can preload environment variables from `.env` via `--env-file`.
 
 Create `.env` from template:
 

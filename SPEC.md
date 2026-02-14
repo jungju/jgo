@@ -1,7 +1,7 @@
 # jgo SPEC (Frozen)
 
 - Project: `jgo`
-- Spec Version: `1.0.30`
+- Spec Version: `1.0.31`
 - Status: `FROZEN`
 - Last Updated: `2026-02-14`
 
@@ -64,8 +64,8 @@ Core intent:
    - server uses the last non-empty `user` message as instruction.
    - served model is fixed to `jgo`.
 8. Startup/CLI behavior:
-   - all entrypoints (`serve`, `run`, `exec`) validate SSH settings before execution.
-   - `run` and `exec` default to `--env-file .env`; missing file is an error unless `--env-file ""` is used.
+   - all entrypoints (`serve`, `exec`) validate SSH settings before execution.
+   - `exec` defaults to `--env-file .env`; missing file is an error unless `--env-file ""` is used.
 9. Observability:
    - each request/execution must have a generated `run_id`.
    - `/v1/chat/completions` response must include `X-JGO-Run-ID` header.
@@ -83,15 +83,11 @@ Core intent:
 
 ## 5.1 CLI
 
-1. `jgo run [--env-file .env] "<instruction>"`
-   - executes prompt optimization only.
-   - outputs optimized prompt text.
-   - still requires SSH settings because shared startup validation runs first.
-2. `jgo exec [--env-file .env] "<instruction>"`
+1. `jgo exec [--env-file .env] "<instruction>"`
    - executes full automation.
    - `--optimize-prompt` enables prompt optimization for this execution.
    - outputs raw `codex exec` response text only.
-3. `jgo serve [--optimize-prompt]`
+2. `jgo serve [--optimize-prompt]`
    - starts OpenAI-compatible resident server.
 
 ## 5.2 Server API
@@ -164,6 +160,7 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 
 ## 9. Changelog
 
+- `1.0.31` (`2026-02-14`): removed CLI `run` mode and `make run-partial`; execution CLI path is now `jgo exec` (`make run-full`) only.
 - `1.0.30` (`2026-02-14`): simplified SSH host-key behavior in runtime/docs and extended first-run checklist to provision SSH key files plus `~/.ssh/authorized_keys` registration.
 - `1.0.29` (`2026-02-14`): renamed manual bootstrap script to `jgo-first-run-checklist`, added codex/gh/kubectl checks, and enforced one-time homefiles copy with marker-file guard.
 - `1.0.28` (`2026-02-14`): added manual `apply-homefiles` bootstrap script and included it in Docker image to copy `homefiles` into target home and enforce sandbox workspace-write network access config.

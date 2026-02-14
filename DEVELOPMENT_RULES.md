@@ -15,8 +15,7 @@
 
 ## CLI Rules
 
-- Support `jgo serve`, `jgo run`, and `jgo exec`.
-- `jgo run` is prompt-optimization preview mode only.
+- Support `jgo serve` and `jgo exec`.
 - `jgo exec` is full automation mode.
 - Fail fast on invalid input.
 - Print errors to stderr.
