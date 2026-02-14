@@ -33,14 +33,13 @@ var errCodexLoginRequired = errors.New("codex login is required")
 var runCounter atomic.Uint64
 
 type Config struct {
-	CodexBin                 string
-	ListenAddr               string
-	SSHUser                  string
-	SSHHost                  string
-	SSHPort                  string
-	SSHKeyPath               string
-	SSHStrictHostKeyChecking bool
-	OptimizePrompt           bool
+	CodexBin       string
+	ListenAddr     string
+	SSHUser        string
+	SSHHost        string
+	SSHPort        string
+	SSHKeyPath     string
+	OptimizePrompt bool
 }
 
 type OpenAIConfig struct {
@@ -320,19 +319,14 @@ func loadConfigFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	sshStrictHostKeyChecking, err := parseBoolEnvDefault("JGO_SSH_STRICT_HOST_KEY_CHECKING", false)
-	if err != nil {
-		return Config{}, err
-	}
 
 	cfg := Config{
-		CodexBin:                 strings.TrimSpace(os.Getenv("CODEX_BIN")),
-		ListenAddr:               strings.TrimSpace(os.Getenv("JGO_LISTEN_ADDR")),
-		SSHUser:                  strings.TrimSpace(os.Getenv("JGO_SSH_USER")),
-		SSHHost:                  strings.TrimSpace(os.Getenv("JGO_SSH_HOST")),
-		SSHPort:                  strings.TrimSpace(os.Getenv("JGO_SSH_PORT")),
-		SSHStrictHostKeyChecking: sshStrictHostKeyChecking,
-		OptimizePrompt:           optimizePrompt,
+		CodexBin:       strings.TrimSpace(os.Getenv("CODEX_BIN")),
+		ListenAddr:     strings.TrimSpace(os.Getenv("JGO_LISTEN_ADDR")),
+		SSHUser:        strings.TrimSpace(os.Getenv("JGO_SSH_USER")),
+		SSHHost:        strings.TrimSpace(os.Getenv("JGO_SSH_HOST")),
+		SSHPort:        strings.TrimSpace(os.Getenv("JGO_SSH_PORT")),
+		OptimizePrompt: optimizePrompt,
 	}
 
 	if cfg.CodexBin == "" {
@@ -991,9 +985,7 @@ func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt str
 
 func buildSSHArgs(cfg Config, remoteCommand string) []string {
 	args := make([]string, 0, 8)
-	if !cfg.SSHStrictHostKeyChecking {
-		args = append(args, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null")
-	}
+	args = append(args, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null")
 	if keyPath := strings.TrimSpace(cfg.SSHKeyPath); keyPath != "" {
 		args = append(args, "-i", keyPath, "-o", "IdentitiesOnly=yes")
 	}

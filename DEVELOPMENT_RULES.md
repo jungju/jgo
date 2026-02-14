@@ -27,7 +27,6 @@
 - Do not create jgo-managed per-run temporary workspaces.
 - Build Codex env from process environment only.
 - Require SSH target envs: `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`.
-- Support `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default `false`) for SSH host key verification mode.
 - Never print SSH public key logs at startup.
 - Keep default `OPENAI_BASE_URL` as `https://api.openai.com/v1` when unset.
 - Support OpenWebUI/LiteLLM fallback mapping to `OPENAI_API_KEY`.
