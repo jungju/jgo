@@ -954,17 +954,30 @@ func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt str
 	)
 	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
 	cmd.Env = codexEnv
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
-	out, err := cmd.CombinedOutput()
-	logCommandOutput(ctx, "codex exec", out)
-	resp := strings.TrimSpace(string(out))
+	err := cmd.Run()
+	stdoutResp := strings.TrimSpace(stdoutBuf.String())
+	stderrResp := strings.TrimSpace(stderrBuf.String())
+	logCommandOutput(ctx, "codex exec stdout", stdoutBuf.Bytes())
+	logCommandOutput(ctx, "codex exec stderr", stderrBuf.Bytes())
 	if err != nil {
-		if resp == "" {
-			resp = err.Error()
+		detail := stderrResp
+		if detail == "" {
+			detail = stdoutResp
 		}
-		return resp, fmt.Errorf("%w: %s", err, resp)
+		if detail == "" {
+			detail = err.Error()
+		}
+		return stdoutResp, fmt.Errorf("%w: %s", err, detail)
 	}
-	return resp, nil
+	if stdoutResp != "" {
+		return stdoutResp, nil
+	}
+	return stderrResp, nil
 }
 
 func buildSSHArgs(cfg Config, remoteCommand string) []string {
