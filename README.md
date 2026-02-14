@@ -193,7 +193,7 @@ jgo-first-run-checklist
 - Fixed cache root: `.jgo-cache` (under startup directory)
 - Cached data:
   - go build cache: `.jgo-cache/go-build`
-  - go module cache (preloaded in image): `/opt/jgo/go-mod` (override with `GOMODCACHE`)
+  - go module cache (preloaded in image): `/home/jgo/.cache/go-mod` (override with `GOMODCACHE`)
   - codex home: `.jgo-cache/codex`
 
 ## Environment Variables
@@ -217,7 +217,7 @@ jgo-first-run-checklist
   - `CODEX_BIN` (default: `codex`)
   - `JGO_LISTEN_ADDR` (default: `:8080`)
   - `JGO_OPTIMIZE_PROMPT` (default: `false`)
-  - `GOMODCACHE` (default in image: `/opt/jgo/go-mod`)
+  - `GOMODCACHE` (default in image: `/home/jgo/.cache/go-mod`)
   - `JGO_AVAILABLE_CLIS` (optional comma-separated CLI hint list for prompt optimization)
   - `OPENWEBUI_BASE_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`
   - `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `LITELLM_MODEL`
