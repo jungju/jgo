@@ -29,6 +29,8 @@ docker-push-workspace:
 	  --push \
 	  .
 
+push: docker-push docker-push-workspace
+
 serve:
 	go run main.go serve
 
