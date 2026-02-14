@@ -1,17 +1,17 @@
 # jgo SPEC (Frozen)
 
 - Project: `jgo`
-- Spec Version: `1.0.21`
+- Spec Version: `1.0.24`
 - Status: `FROZEN`
 - Last Updated: `2026-02-14`
 
 ## 1. Purpose
 
-`jgo` is a resident/CLI automation runtime that converts natural-language requests into executable Codex tasks, with optional repository commit/push automation.
+`jgo` is a resident/CLI automation runtime that converts natural-language requests into executable Codex tasks across repository and infrastructure operations.
 
 Core intent:
 - keep orchestration minimal,
-- delegate all real repository manipulation to `codex`,
+- delegate real task execution to `codex` with environment-provided CLIs (`gh`, `aws`, `kubectl`, `git`, etc.),
 - keep behavior predictable and non-interactive.
 
 ## 2. Primary Goals
@@ -20,20 +20,21 @@ Core intent:
 2. Provide direct CLI execution paths without requiring server mode.
 3. Support optional prompt optimization into a Codex-optimized prompt via OpenAI-compatible API.
 4. Execute tasks through `codex exec --full-auto --skip-git-repo-check` only.
-5. For repository-scoped requests, perform edit + commit/push in separate Codex phases.
+5. Execute each automation request through a single codex execution phase.
+6. Let Codex perform multi-domain automation (GitHub/AWS/Kubernetes/repository workflows) via available CLIs.
 
 ## 3. Non-Goals
 
 1. `jgo` does not directly edit repository files.
-2. `jgo` does not directly run git operations for clone/checkout/add/commit/push.
+2. `jgo` does not directly execute domain CLIs (`git`, `gh`, `aws`, `kubectl`) as user-task actions.
 3. `jgo` does not implement complex internal planners, task queues, or distributed scheduling.
 4. `jgo` does not own authentication UX beyond validating `codex login status`.
 
 ## 4. Fixed Execution Model (Invariants)
 
-1. Repository operations are Codex-only:
-   - All repo manipulation must be performed by `codex`.
-   - `jgo` must not call git CLI for repo changes.
+1. Task execution is Codex-only:
+   - Repository/infrastructure operations must be performed by `codex`.
+   - `jgo` must not call domain CLIs (`git`, `gh`, `aws`, `kubectl`) for user task execution.
 2. Prompt optimization contract (when enabled) is fixed:
    - OpenAI Chat Completions compatible endpoint.
    - `MODEL` from environment.
@@ -44,40 +45,34 @@ Core intent:
    - default is disabled (`JGO_OPTIMIZE_PROMPT=false`).
    - can be enabled by `JGO_OPTIMIZE_PROMPT=true`.
    - can be enabled per command with `--optimize-prompt` (`jgo serve`, `jgo exec`).
-4. Repository reference handling:
-   - If request contains repo ref (`owner/repo` or GitHub URL): run repo-scoped flow.
-   - If repo ref is absent: run workspace-only flow and skip commit/push phase.
-5. Non-interactive execution:
+4. Non-interactive execution:
    - Codex prompts must require non-interactive command behavior.
-6. Runtime workspace:
-   - create remote per-run temporary workspace via `mktemp -d /tmp/jgo-run-XXXXXX`.
-   - remove the remote workspace after run (best effort cleanup).
-7. Codex process invocation:
+5. Codex process invocation:
    - execute codex commands through SSH target from env:
      - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`.
      - optional: `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default false).
    - include `--skip-git-repo-check` in codex exec command.
-   - pass codex edit/commit prompts as inline `codex exec` command arguments (not via stdin).
-8. SSH key management:
+   - pass prompt as inline `codex exec` command argument (not via stdin).
+   - execute codex once per automation request.
+6. SSH key management:
    - `jgo` must not require environment-provided private key material.
    - `jgo` must not persist SSH private key material from environment variables.
    - SSH authentication must rely on key material already available to the runtime `ssh` client.
    - `jgo` must not print SSH public key logs at startup.
-9. API behavior:
+7. API behavior:
    - `/v1/chat/completions` supports `stream=false` and `stream=true`.
    - server uses the last non-empty `user` message as instruction.
    - served model is fixed to `jgo`.
-10. Startup/CLI behavior:
+8. Startup/CLI behavior:
    - all entrypoints (`serve`, `run`, `exec`) validate SSH settings before execution.
    - `run` and `exec` default to `--env-file .env`; missing file is an error unless `--env-file ""` is used.
-11. Observability:
+9. Observability:
    - each request/execution must have a generated `run_id`.
    - `/v1/chat/completions` response must include `X-JGO-Run-ID` header.
    - codex SSH invocations must log both command and command output for:
      - `codex login status`
-     - remote workdir prepare (`mktemp -d /tmp/jgo-run-XXXXXX`)
      - `codex exec`
-12. Runtime/Workspace image split:
+10. Runtime/Workspace image split:
    - `Dockerfile` defines the `jgo` runtime/server image.
    - `workspace.dockerfile` defines the remote workspace execution image.
 
@@ -93,7 +88,7 @@ Core intent:
    - executes full automation.
    - `--optimize-prompt` enables prompt optimization for this execution.
    - outputs JSON:
-     - `{"status":"ok","branch":"<branch-or-empty>"}`.
+     - `{"status":"ok"}`.
 3. `jgo serve [--optimize-prompt]`
    - starts OpenAI-compatible resident server.
 
@@ -153,6 +148,9 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 
 ## 9. Changelog
 
+- `1.0.24` (`2026-02-14`): clarified the product purpose as Codex-led multi-CLI automation (GitHub/AWS/Kubernetes/repository workflows) and aligned goals/non-goals/invariants wording.
+- `1.0.23` (`2026-02-14`): removed branch field from `jgo exec`/chat fallback success output; response now returns status only.
+- `1.0.22` (`2026-02-14`): removed temporary remote workspace and repo-scoped two-phase execution model; automation now runs a single `codex exec` call per request.
 - `1.0.21` (`2026-02-14`): changed codex execution prompt delivery from stdin to inline command argument for `codex exec`.
 - `1.0.20` (`2026-02-14`): documented runtime/workspace image split and fixed observability contract (`run_id`, `X-JGO-Run-ID`, codex command/output logging).
 - `1.0.19` (`2026-02-13`): removed environment-private-key requirement from runtime validation and documentation; SSH now relies on key material already available to the runtime `ssh` client.

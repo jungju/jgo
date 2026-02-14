@@ -15,7 +15,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,7 +54,6 @@ type RequestPlan struct {
 }
 
 type AutomationResult struct {
-	Branch        string
 	CodexResponse string
 }
 
@@ -297,14 +295,12 @@ func execCommand(cfg Config, args []string) error {
 		cfg.OptimizePrompt,
 	)
 
-	result, err := runAutomation(ctx, cfg, instruction)
-	if err != nil {
+	if _, err := runAutomation(ctx, cfg, instruction); err != nil {
 		return err
 	}
 
 	out := map[string]string{
 		"status": "ok",
-		"branch": result.Branch,
 	}
 	enc := json.NewEncoder(os.Stdout)
 	if err := enc.Encode(out); err != nil {
@@ -485,21 +481,19 @@ func handleChatCompletions(cfg Config) http.HandlerFunc {
 
 		content := strings.TrimSpace(result.CodexResponse)
 		if content == "" {
-			content = fmt.Sprintf(`{"status":"ok","branch":"%s"}`, result.Branch)
-		} else if result.Branch != "" {
-			content = content + "\n\n[branch] " + result.Branch
+			content = `{"status":"ok"}`
 		}
 		if req.Stream {
 			if err := writeStreamingChatCompletion(w, servedModelID, content); err != nil {
 				logRunf(ctx, "stream write failed: %v", err)
 			}
-			logRunf(ctx, "request completed: stream=true branch=%s content_len=%d", result.Branch, len(content))
+			logRunf(ctx, "request completed: stream=true content_len=%d", len(content))
 			return
 		}
 
 		resp := buildAssistantChatCompletion(servedModelID, content)
 		writeJSON(w, http.StatusOK, resp)
-		logRunf(ctx, "request completed: stream=false branch=%s content_len=%d", result.Branch, len(content))
+		logRunf(ctx, "request completed: stream=false content_len=%d", len(content))
 	}
 }
 
@@ -729,24 +723,6 @@ func runAutomation(ctx context.Context, cfg Config, instruction string) (Automat
 		logRunf(ctx, "stage=prompt_optimize skipped: enabled=false")
 	}
 
-	repoRef := ""
-	repoURL := ""
-	repoScoped := false
-	if ref, refErr := extractRepoRef(instruction); refErr == nil {
-		repoRef = ref
-		var err error
-		repoURL, err = repoURLFromRepoRef(repoRef)
-		if err != nil {
-			return AutomationResult{}, err
-		}
-		repoScoped = true
-		logRunf(ctx, "repo resolved: ref=%q url=%s", repoRef, sanitizeURL(repoURL))
-	} else {
-		logRunf(ctx, "repo context not found; running workspace-only task")
-	}
-
-	logRunf(ctx, "repo_scope: repo_scoped=%t repo_ref=%q", repoScoped, repoRef)
-
 	if _, err := exec.LookPath("ssh"); err != nil {
 		return AutomationResult{}, fmt.Errorf("ssh is required in PATH: %w", err)
 	}
@@ -759,53 +735,20 @@ func runAutomation(ctx context.Context, cfg Config, instruction string) (Automat
 	}
 	logRunf(ctx, "stage=codex_login_check done")
 
-	logRunf(ctx, "stage=remote_workdir_prepare start")
-	remoteWorkDir, err := createRemoteWorkDir(ctx, cfg, codexEnv)
+	logRunf(ctx, "stage=codex_exec start")
+	execPrompt := buildWorkspacePrompt(optimizedPrompt, availableCLIs)
+	execResp, err := runCodexExec(ctx, cfg, codexEnv, execPrompt)
 	if err != nil {
-		return AutomationResult{}, err
+		return AutomationResult{}, fmt.Errorf("codex execution failed: %w", err)
 	}
-	logRunf(ctx, "stage=remote_workdir_prepare done: remote_dir=%s", remoteWorkDir)
-	defer cleanupRemoteWorkDir(ctx, cfg, codexEnv, remoteWorkDir)
-
-	branch := fmt.Sprintf("jgo/%s", time.Now().UTC().Format("20060102-150405"))
-	codexResponses := make([]string, 0, 2)
-
-	logRunf(ctx, "stage=codex_edit start")
-	editPrompt := buildWorkspacePrompt(optimizedPrompt, availableCLIs)
-	if repoScoped {
-		editPrompt = buildEditPrompt(repoRef, repoURL, branch, optimizedPrompt, availableCLIs)
+	codexResponses := make([]string, 0, 1)
+	if s := strings.TrimSpace(execResp); s != "" {
+		codexResponses = append(codexResponses, "[codex]\n"+s)
 	}
-	editResp, err := runCodexExec(ctx, cfg, remoteWorkDir, codexEnv, editPrompt)
-	if err != nil {
-		return AutomationResult{}, fmt.Errorf("codex edit failed: %w", err)
-	}
-	if s := strings.TrimSpace(editResp); s != "" {
-		codexResponses = append(codexResponses, "[codex_edit]\n"+s)
-	}
-	logRunf(ctx, "stage=codex_edit done")
-
-	if !repoScoped {
-		logRunf(ctx, "stage=codex_commit_push skipped: repository context not provided")
-		logRunf(ctx, "automation success: branch=")
-		return AutomationResult{
-			Branch:        "",
-			CodexResponse: strings.Join(codexResponses, "\n\n"),
-		}, nil
-	}
-
-	logRunf(ctx, "stage=codex_commit_push start")
-	commitResp, err := runCodexExec(ctx, cfg, remoteWorkDir, codexEnv, buildCommitPushPrompt(repoRef, repoURL, branch))
-	if err != nil {
-		return AutomationResult{}, fmt.Errorf("codex commit/push failed: %w", err)
-	}
-	if s := strings.TrimSpace(commitResp); s != "" {
-		codexResponses = append(codexResponses, "[codex_commit_push]\n"+s)
-	}
-	logRunf(ctx, "stage=codex_commit_push done")
-	logRunf(ctx, "automation success: branch=%s", branch)
+	logRunf(ctx, "stage=codex_exec done")
+	logRunf(ctx, "automation success")
 
 	return AutomationResult{
-		Branch:        branch,
 		CodexResponse: strings.Join(codexResponses, "\n\n"),
 	}, nil
 }
@@ -875,7 +818,7 @@ func analyzeRequest(ctx context.Context, cfg OpenAIConfig, instruction string, a
 		Messages: []chatMessage{
 			{
 				Role:    "system",
-				Content: fmt.Sprintf("Return strict JSON only with key: optimized_prompt(string). Do not include any other keys or text. Your job is prompt optimization only, not execution decision. Rewrite the user request into a clear, concrete Codex execution prompt. Available CLI tools from environment: %s. Prefer these CLIs in optimized_prompt. For GitHub tasks, use gh when available. For Kubernetes tasks, use kubectl when available.", cliList),
+				Content: fmt.Sprintf("Return strict JSON only with key: optimized_prompt(string). Do not include any other keys or text. Your job is prompt optimization only, not execution decision. Rewrite the user request into a clear, concrete Codex execution prompt. Available CLI tools from environment: %s. Prefer these CLIs in optimized_prompt. For GitHub tasks, use gh when available. For Kubernetes tasks, use kubectl when available. For AWS tasks, use aws when available.", cliList),
 			},
 			{
 				Role:    "user",
@@ -999,13 +942,13 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 	return nil
 }
 
-func runCodexExec(ctx context.Context, cfg Config, workDir string, codexEnv []string, prompt string) (string, error) {
-	args := []string{"exec", "--full-auto", "--skip-git-repo-check", "--cd", workDir, prompt}
+func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt string) (string, error) {
+	args := []string{"exec", "--full-auto", "--skip-git-repo-check", prompt}
 	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
 	sshArgs := buildSSHArgs(cfg, codexCommand)
 
 	// Avoid logging the full inline prompt while still reflecting argument-mode execution.
-	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "--cd", workDir, "<inline-prompt>"}
+	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "<inline-prompt>"}
 	logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
 	logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
 	logRunf(
@@ -1028,75 +971,6 @@ func runCodexExec(ctx context.Context, cfg Config, workDir string, codexEnv []st
 		return resp, fmt.Errorf("%w: %s", err, resp)
 	}
 	return resp, nil
-}
-
-func createRemoteWorkDir(ctx context.Context, cfg Config, codexEnv []string) (string, error) {
-	remoteCommand := wrapBashLoginCommand("mktemp -d /tmp/jgo-run-XXXXXX")
-	sshArgs := buildSSHArgs(cfg, remoteCommand)
-	logRunf(ctx, "codex command: %s", formatCommand("ssh", sshArgs...))
-
-	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
-	cmd.Env = codexEnv
-	out, err := cmd.CombinedOutput()
-	logCommandOutput(ctx, "remote workdir prepare", out)
-	output := strings.TrimSpace(string(out))
-	if err != nil {
-		return "", fmt.Errorf(
-			"prepare remote work dir failed (target=%s, dir=%s): %w: %s",
-			formatSSHAddress(cfg),
-			"/tmp/jgo-run-XXXXXX",
-			err,
-			output,
-		)
-	}
-	workDir := parseRemoteWorkDirOutput(output)
-	if workDir == "" {
-		return "", fmt.Errorf(
-			"prepare remote work dir failed (target=%s): empty work dir output=%q",
-			formatSSHAddress(cfg),
-			output,
-		)
-	}
-	return workDir, nil
-}
-
-func cleanupRemoteWorkDir(ctx context.Context, cfg Config, codexEnv []string, workDir string) {
-	workDir = strings.TrimSpace(workDir)
-	if workDir == "" {
-		return
-	}
-
-	remoteCommand := wrapBashLoginCommand("rm -rf -- " + shellQuote(workDir))
-	sshArgs := buildSSHArgs(cfg, remoteCommand)
-	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
-	cmd.Env = codexEnv
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		logRunf(
-			ctx,
-			"stage=remote_workdir_cleanup failed: remote_dir=%s err=%v output=%q",
-			workDir,
-			err,
-			truncateForLog(strings.TrimSpace(string(out)), 300),
-		)
-		return
-	}
-	logRunf(ctx, "stage=remote_workdir_cleanup done: remote_dir=%s", workDir)
-}
-
-func parseRemoteWorkDirOutput(output string) string {
-	lines := strings.Split(output, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(strings.ToLower(line), "warning:") {
-			continue
-		}
-		return line
-	}
-	return ""
 }
 
 func buildSSHArgs(cfg Config, remoteCommand string) []string {
@@ -1139,7 +1013,7 @@ func buildWorkspacePrompt(optimizedPrompt string, availableCLIs []string) string
 		cliList = "codex, git"
 	}
 
-	return fmt.Sprintf(`You are operating inside a workspace directory.
+	return fmt.Sprintf(`You are operating inside a remote execution environment.
 
 Available tools/environment:
 - codex CLI automation mode
@@ -1151,6 +1025,7 @@ Execution guidance:
 - Use CLI tools listed above when relevant.
 - For GitHub-related tasks, use gh when available.
 - For Kubernetes-related tasks, use kubectl when available.
+- For AWS-related tasks, use aws when available.
 
 Execute this optimized request exactly:
 %s
@@ -1159,131 +1034,7 @@ Constraints:
 - Use non-interactive commands only.
 - Keep changes focused and minimal.
 - Do not ask for extra user input.
-`, cliList, optimizedPrompt)
-}
-
-func buildEditPrompt(repoRef, repoURL, branch, optimizedPrompt string, availableCLIs []string) string {
-	cliList := strings.Join(availableCLIs, ", ")
-	if strings.TrimSpace(cliList) == "" {
-		cliList = "codex, git"
-	}
-
-	return fmt.Sprintf(`You are operating inside an empty workspace directory.
-Target repository reference from user request: %s
-Target repository clone URL: %s
-Target branch: %s
-
-Available tools/environment:
-- codex CLI automation mode
-- CLI tools from environment: %s
-- KUBECONFIG environment variable may be provided
-- OpenAI-compatible endpoints (OpenWebUI/LiteLLM) via environment variables
-
-Execution guidance:
-- Use CLI tools listed above when relevant.
-- For GitHub-related tasks, use gh when available.
-- For Kubernetes-related tasks, use kubectl when available.
-
-Task:
-1. Clone the target repository into ./repo (if already cloned, reuse it).
-2. In ./repo, checkout/create branch %s.
-3. Execute this optimized request exactly in ./repo:
-%s
-4. Stop after file changes. Do not commit or push in this step.
-
-Constraints:
-- Use non-interactive commands only.
-- Keep changes focused and minimal.
-- Do not ask for extra user input.
-`, repoRef, repoURL, branch, cliList, branch, optimizedPrompt)
-}
-
-func buildCommitPushPrompt(repoRef, repoURL, branch string) string {
-	return fmt.Sprintf(`You are operating inside a workspace directory.
-Target repository reference from user request: %s
-Target repository clone URL: %s
-Target branch: %s
-
-Task:
-1. Ensure target repository exists at ./repo (clone if missing).
-2. In ./repo, checkout branch %s (create it if missing).
-3. Inspect all staged/unstaged/untracked changes.
-4. Split the changes into coherent, minimal commits by topic.
-5. Use concise Conventional Commit messages.
-6. Commit all current changes.
-7. Push to origin %s.
-
-Constraints:
-- Use non-interactive commands only. Do not open editors or interactive prompts.
-- Do not amend or rewrite existing commits.
-- Never force-push.
-- Keep each commit focused and internally consistent.
-- After each commit, verify that staged content matches the commit message.
-- At the end, print the pushed commit list as "<short_sha> <subject>".
-`, repoRef, repoURL, branch, branch, branch)
-}
-
-func extractRepoRef(instruction string) (string, error) {
-	text := strings.TrimSpace(instruction)
-	if text == "" {
-		return "", fmt.Errorf("instruction is empty")
-	}
-
-	urlPattern := regexp.MustCompile(`https?://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:\.git)?`)
-	if m := urlPattern.FindStringSubmatch(text); len(m) > 1 {
-		return normalizeRepoRef(m[1]), nil
-	}
-
-	plainPattern := regexp.MustCompile(`\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\b`)
-	matches := plainPattern.FindAllStringSubmatch(text, -1)
-	for _, m := range matches {
-		if len(m) < 2 {
-			continue
-		}
-		candidate := normalizeRepoRef(m[1])
-		parts := strings.Split(candidate, "/")
-		if len(parts) != 2 {
-			continue
-		}
-		if parts[0] == "" || parts[1] == "" {
-			continue
-		}
-		return candidate, nil
-	}
-
-	return "", fmt.Errorf("instruction must include repository name (owner/repo)")
-}
-
-func normalizeRepoRef(s string) string {
-	out := strings.TrimSpace(s)
-	out = strings.TrimPrefix(out, "/")
-	out = strings.TrimSuffix(out, "/")
-	out = strings.TrimSuffix(out, ".git")
-	out = strings.Trim(out, ".,:;)]}")
-	return out
-}
-
-func repoURLFromRepoRef(repoRef string) (string, error) {
-	ref := strings.TrimSpace(repoRef)
-	if ref == "" {
-		return "", fmt.Errorf("repository reference is empty")
-	}
-
-	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
-		if strings.HasSuffix(ref, ".git") {
-			return ref, nil
-		}
-		return ref + ".git", nil
-	}
-
-	if strings.Contains(ref, "/") && !strings.Contains(ref, "://") {
-		parts := strings.Split(ref, "/")
-		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-			return "https://github.com/" + ref + ".git", nil
-		}
-	}
-
-	return "", fmt.Errorf("invalid repository reference: %s", repoRef)
+	`, cliList, optimizedPrompt)
 }
 
 func applyProviderFallbacks(env map[string]string) {

@@ -5,10 +5,11 @@ Authoritative behavior baseline: `SPEC.md` (`FROZEN`).
 `jgo` is a resident Go server that exposes an OpenAI-compatible API and runs `codex` CLI prompts to:
 
 1. Receive chat requests through OpenAI-compatible endpoints.
-2. Prepare an isolated per-run remote workspace under `/tmp/jgo-run-*`.
-3. Optionally optimize the user request via upstream OpenAI-compatible API.
-4. Execute the effective prompt through `codex` only (via SSH target).
-5. For repository-scoped requests, run commit/push as a separate codex phase.
+2. Optionally optimize the user request via upstream OpenAI-compatible API.
+3. Execute the effective prompt through a single `codex exec` call (via SSH target).
+4. Return codex execution response in OpenAI-compatible format.
+
+Primary objective: let Codex perform real work through available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
 
 ## 현재 개발 구조 (파일/이미지 기준)
 
@@ -24,17 +25,17 @@ Authoritative behavior baseline: `SPEC.md` (`FROZEN`).
 ## 서비스 구조 요약
 
 - `jgo`는 OpenAI 호환 API 서버로 상주한다.
-- 요청이 오면 원격에 run 단위 임시 workspace(`/tmp/jgo-run-*`)를 만들고 그 안에서 작업한다.
-- 실제 변경 작업은 모두 `codex` 실행으로 위임한다.
-- 레포 요청이면 `수정 단계`와 `커밋/푸시 단계`를 분리해 codex를 두 번 실행한다.
+- 요청이 오면 입력을 해석하고(옵션) 프롬프트를 최적화한 뒤 실행 프롬프트를 확정한다.
+- 실제 실행은 원격 SSH 대상에서 `codex exec` 단일 실행으로 위임한다.
+- 핵심 목적은 codex가 환경의 CLI(`gh`, `aws`, `kubectl`, `git` 등)를 활용해 다양한 자동화 작업을 수행하는 것이다.
 
 ## Service Overview
 
 `jgo` is an OpenAI-compatible automation gateway.
 
 - External clients call `jgo` using `/v1/chat/completions`.
-- `jgo` orchestrates request parsing, optional prompt optimization, workspace setup, and codex invocation.
-- Actual repository/file operations are delegated to codex execution in workspace.
+- `jgo` orchestrates request parsing, optional prompt optimization, and codex invocation.
+- Actual GitHub/cloud/cluster/repository operations are delegated to codex execution through available CLIs.
 - The service is designed for resident operation (Kubernetes-friendly), not one-shot ephemeral scripts.
 
 ## Architecture
@@ -44,20 +45,15 @@ Authoritative behavior baseline: `SPEC.md` (`FROZEN`).
    - `POST /v1/chat/completions`
 2. Orchestrator:
    - extracts latest `user` instruction,
-   - detects repo context (`owner/repo` or GitHub URL),
-   - resolves execution mode (workspace-only or repo-scoped).
-3. Workspace Layer:
-   - creates per-run remote temporary directory under `/tmp/jgo-run-*`,
-   - keeps runs isolated.
-4. Prompt Layer (optional):
+   - resolves effective prompt (original or optimized).
+3. Prompt Layer (optional):
    - when enabled, calls upstream OpenAI-compatible API and rewrites instruction for codex execution.
-5. Execution Layer:
-   - runs `codex exec --full-auto --skip-git-repo-check` via SSH target (`JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`),
-   - repo-scoped requests perform edit phase and commit/push phase separately.
-6. Observability Layer:
+4. Execution Layer:
+   - runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` via SSH target (`JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`) and lets codex use available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
+5. Observability Layer:
    - every request/run gets `run_id`,
    - API response header includes `X-JGO-Run-ID`,
-   - `codex command` and command output are logged for login check / workdir prepare / codex exec.
+   - `codex command` and command output are logged for login check / codex exec.
 
 ## Philosophy
 
@@ -137,18 +133,16 @@ make run-full PROMPT="owner/repo 배포 매니페스트를 점검하고 필요�
 make run-full PROMPT="접근 가능한 Repo 전부 나열해줘"
 ```
 
-## Request Lifecycle (API -> Workspace -> Codex)
+## Request Lifecycle (API -> Codex)
 
 For every `POST /v1/chat/completions` request:
 
 1. `jgo` reads the latest `user` message as instruction.
-2. `jgo` detects repository reference when provided (`owner/repo` or GitHub URL).
-3. `jgo` prepares remote workspace under `/tmp/jgo-run-*`.
-4. If prompt optimization is enabled, `jgo` calls upstream OpenAI-compatible API and builds optimized prompt.
-5. If prompt optimization is disabled (default), `jgo` uses original instruction as effective prompt.
-6. `jgo` runs codex edit phase in workspace.
-7. If repo-scoped request, `jgo` runs codex commit/push phase.
-8. `jgo` returns Codex execution response text as OpenAI-compatible chat response content.
+2. If prompt optimization is enabled, `jgo` calls upstream OpenAI-compatible API and builds optimized prompt.
+3. If prompt optimization is disabled (default), `jgo` uses original instruction as effective prompt.
+4. `jgo` validates `codex login status` on target.
+5. `jgo` runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` once.
+6. `jgo` returns Codex execution response text as OpenAI-compatible chat response content.
 
 Prompt optimization toggle:
 
@@ -216,7 +210,6 @@ CLI list for prompt optimization (from env):
 
 `jgo` reads process environment only.
 `jgo run` / `jgo exec` can preload environment variables from `.env` via `--env-file`.
-`jgo` creates per-run remote temporary workspace under `/tmp/jgo-run-*`.
 
 Create `.env` from template:
 
@@ -298,7 +291,6 @@ curl -sS http://localhost:8080/v1/chat/completions \
 - 프롬프트 최적화 ON일 때, `stage=prompt_optimize call_openai` / `stage=prompt_optimize openai_response` 로그에 OpenAI 호환 API endpoint와 status가 함께 출력된다.
 - 원격 명령은 `codex command: ...`와 함께 명령 출력 로그가 기록된다.
   - `codex login status output=...`
-  - `remote workdir prepare output=...`
   - `codex exec output=...`
 
 Codex 로그인 미완료 처리:
@@ -311,15 +303,7 @@ Codex 로그인 미완료 처리:
 ## Runtime Flow
 
 1. Build execution environment from process environment variables.
-2. Detect repository reference from request when provided (`owner/repo` or GitHub URL).
-3. Optional: optimize prompt for Codex with OpenAI API (`JGO_OPTIMIZE_PROMPT=true` or `--optimize-prompt`).
-4. If repository reference exists, resolve repository URL (`owner/repo` -> `https://github.com/owner/repo.git`).
-5. Create remote run workspace under `/tmp/jgo-run-*` (auto cleanup after run).
-6. Run `codex exec --full-auto --skip-git-repo-check` with effective prompt.
-7. If repository reference exists, run `codex exec --full-auto --skip-git-repo-check` again (commit/push prompt) to commit and push to `origin`.
-8. Return Codex execution response text in OpenAI-compatible response content (branch is appended when available).
-
-## Commit/Push Prompt Source
-
-Commit/push prompt is embedded in `main.go` (`buildCommitPushPrompt`).
-Reference gist (manual workflow source): https://gist.github.com/jungju/abf2184c1f7a8853ab9ba6b1f7e86650
+2. Optional: optimize prompt for Codex with OpenAI API (`JGO_OPTIMIZE_PROMPT=true` or `--optimize-prompt`).
+3. Validate `codex login status` on SSH target.
+4. Run `codex exec --full-auto --skip-git-repo-check "<prompt>"` once.
+5. Return Codex execution response text in OpenAI-compatible response content.

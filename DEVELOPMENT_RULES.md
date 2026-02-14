@@ -24,7 +24,7 @@
 ## Runtime Rules
 
 - Use dedicated cache root `.jgo-cache` under startup directory.
-- Create per-run workspace directories under `.jgo-cache/work`.
+- Do not create jgo-managed per-run temporary workspaces.
 - Build Codex env from process environment only.
 - Require SSH target envs: `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`.
 - Support `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default `false`) for SSH host key verification mode.
@@ -32,15 +32,13 @@
 - Keep default `OPENAI_BASE_URL` as `https://api.openai.com/v1` when unset.
 - Support OpenWebUI/LiteLLM fallback mapping to `OPENAI_API_KEY`.
 - Support OpenWebUI/LiteLLM model fallback mapping to `MODEL`.
-- Detect repository reference when provided.
 - Generate Codex-optimized prompt via OpenAI API only when optimization is enabled.
 - Prompt optimization default is OFF (`JGO_OPTIMIZE_PROMPT=false`).
 - Build available CLI hints for prompt optimization from environment variables.
 - Execute all repository modification work through `codex exec --full-auto --skip-git-repo-check`.
-- If repository reference exists, create branch: `jgo/<timestamp>`.
 - Pass `KUBECONFIG` when provided.
-- Run `codex exec --full-auto --skip-git-repo-check --cd <workspace> "<prompt>"` with inline prompt argument for code changes.
-- If repository reference exists, run `codex exec --full-auto --skip-git-repo-check --cd <workspace> "<prompt>"` again for commit/push.
+- Run `codex exec --full-auto --skip-git-repo-check "<prompt>"` with inline prompt argument.
+- Execute codex once per automation request.
 
 ## Codex Rules
 
@@ -63,7 +61,7 @@
 - Keep Docker build targets minimal: `make docker-push`.
 - `make docker-push` must push multi-arch image for both `linux/amd64` and `linux/arm64`.
 - Docker image may use an official Go runtime base image.
-- Use single `Dockerfile` only.
+- Keep runtime/build definitions to `Dockerfile` and `workspace.dockerfile`.
 - Docker image must install `openssh-client` only (no local codex/aws/gh/kubectl install).
 - Docker runtime must execute `jgo` as script (`go run`), not prebuilt binary.
 - Docker defaults must set persistent cache paths (`GOCACHE`, `GOMODCACHE`, `CODEX_HOME`).
@@ -71,4 +69,4 @@
 
 ## Safety Rules
 
-- Operate only inside temporary workspace.
+- Avoid jgo-managed temporary workspace creation.
