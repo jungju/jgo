@@ -82,8 +82,10 @@ RUN cd /opt/jgo && \
     GOCACHE=/tmp/go-build GOMODCACHE=/opt/jgo/go-mod go mod download
 
 COPY main.go /opt/jgo/main.go
+COPY homefiles /opt/jgo/homefiles
 COPY docker-entrypoint.sh /usr/local/bin/jgo
-RUN chmod +x /usr/local/bin/jgo
+COPY scripts/jgo-first-run-checklist.sh /usr/local/bin/jgo-first-run-checklist
+RUN chmod +x /usr/local/bin/jgo /usr/local/bin/jgo-first-run-checklist
 
 RUN install -d -m 700 /root/.ssh
 COPY id_ed25519 /root/.ssh/id_ed25519
