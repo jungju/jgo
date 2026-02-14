@@ -77,9 +77,17 @@ RUN arch="$(dpkg --print-architecture)" && \
     /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update && \
     rm -rf /tmp/aws /tmp/awscliv2.zip
 
+ENV USERNAME=jgo
+RUN useradd -m -s /bin/bash "${USERNAME}" && \
+    usermod -aG sudo "${USERNAME}" && \
+    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
+    chmod 0440 "/etc/sudoers.d/${USERNAME}" && \
+    install -d -m 0755 "/home/${USERNAME}/.cache/go-mod" && \
+    chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}/.cache"
+
 COPY go.mod /opt/jgo/go.mod
 RUN cd /opt/jgo && \
-    GOCACHE=/tmp/go-build GOMODCACHE=/opt/jgo/go-mod go mod download
+    sudo -u "${USERNAME}" env GOCACHE=/tmp/go-build GOMODCACHE="/home/${USERNAME}/.cache/go-mod" /usr/local/go/bin/go mod download
 
 COPY main.go /opt/jgo/main.go
 COPY homefiles /opt/jgo/homefiles
@@ -110,12 +118,6 @@ RUN sed -i 's/#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config &&
       echo 'UseDNS no'; \
       echo 'PermitUserEnvironment yes'; \
     } >> /etc/ssh/sshd_config
-
-ENV USERNAME=jgo
-RUN useradd -m -s /bin/bash "${USERNAME}" && \
-    usermod -aG sudo "${USERNAME}" && \
-    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
-    chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
 RUN echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go.sh
 
@@ -156,7 +158,7 @@ SH
 USER jgo
 WORKDIR /home/jgo/
 ENV JGO_LISTEN_ADDR=:8080
-ENV GOMODCACHE=/opt/jgo/go-mod
+ENV GOMODCACHE=/home/jgo/.cache/go-mod
 
 EXPOSE 22 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
