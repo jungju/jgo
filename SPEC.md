@@ -1,7 +1,7 @@
 # jgo SPEC (Frozen)
 
 - Project: `jgo`
-- Spec Version: `1.0.25`
+- Spec Version: `1.0.29`
 - Status: `FROZEN`
 - Last Updated: `2026-02-14`
 
@@ -50,6 +50,7 @@ Core intent:
 5. Codex process invocation:
    - execute codex commands through SSH target from env:
      - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`.
+     - container default: `JGO_SSH_USER=jgo`, `JGO_SSH_HOST=localhost`, `JGO_SSH_PORT=22`.
      - optional: `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default false).
    - include `--skip-git-repo-check` in codex exec command.
    - pass prompt as inline `codex exec` command argument (not via stdin).
@@ -72,9 +73,9 @@ Core intent:
    - codex SSH invocations must log both command and command output for:
      - `codex login status`
      - `codex exec`
-10. Runtime/Workspace image split:
-   - `Dockerfile` defines the `jgo` runtime/server image.
-   - `workspace.dockerfile` defines the remote workspace execution image.
+10. Container image model:
+   - `Dockerfile` is the single runtime/execution image definition.
+   - image startup launches `sshd` and executes `main.go`; codex SSH target is localhost in-container.
 11. Response output rule:
    - for successful question/request execution, response content must be limited to raw `codex exec` output.
    - `jgo` must not prepend wrappers/tags (for example, `[codex]`) or synthesize fallback success payloads.
@@ -107,13 +108,25 @@ Core intent:
 ## 5.3 Runtime Artifacts
 
 1. `Dockerfile`
-   - runtime API/orchestrator image for `jgo`.
-2. `workspace.dockerfile`
-   - SSH workspace image for remote codex task execution.
+   - unified API/runtime + codex execution image.
+2. `scripts/jgo-first-run-checklist.sh`
+   - optional manual first-run checklist script:
+     - checks `codex login status`,
+     - checks `gh auth status`,
+     - checks `kubectl config current-context`,
+     - copies `homefiles` into `/home/jgo` once and sets ownership to `jgo`,
+     - creates marker file `/home/jgo/.jgo-homefiles-initialized`,
+     - skips homefiles copy when marker file already exists,
+     - ensures `[sandbox_workspace_write]` / `network_access = true` in `~/.codex/config.toml` on first copy.
 
 ## 6. Environment Requirements
 
-Always required:
+Container defaults:
+1. `JGO_SSH_USER=jgo`
+2. `JGO_SSH_HOST=localhost`
+3. `JGO_SSH_PORT=22`
+
+Optional override:
 1. `JGO_SSH_USER`
 2. `JGO_SSH_HOST`
 3. `JGO_SSH_PORT`
@@ -151,6 +164,10 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 
 ## 9. Changelog
 
+- `1.0.29` (`2026-02-14`): renamed manual bootstrap script to `jgo-first-run-checklist`, added codex/gh/kubectl checks, and enforced one-time homefiles copy with marker-file guard.
+- `1.0.28` (`2026-02-14`): added manual `apply-homefiles` bootstrap script and included it in Docker image to copy `homefiles` into target home and enforce sandbox workspace-write network access config.
+- `1.0.27` (`2026-02-14`): renamed unified image definition to `Dockerfile` (removed `workspace.dockerfile`) and simplified Makefile push flow to a single image target.
+- `1.0.26` (`2026-02-14`): replaced runtime/workspace split with unified `workspace.dockerfile` image, aliased `Dockerfile` to it, and set in-container SSH execution default to `jgo@localhost:22`.
 - `1.0.25` (`2026-02-14`): constrained successful question/request responses to raw codex output only (removed wrapper/fallback success formatting and updated CLI exec output contract).
 - `1.0.24` (`2026-02-14`): clarified the product purpose as Codex-led multi-CLI automation (GitHub/AWS/Kubernetes/repository workflows) and aligned goals/non-goals/invariants wording.
 - `1.0.23` (`2026-02-14`): removed branch field from `jgo exec`/chat fallback success output; response now returns status only.

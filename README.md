@@ -17,16 +17,15 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
   - `main.go`: API/CLI 엔트리포인트(`serve`/`run`/`exec`)와 자동화 오케스트레이션 전체를 단일 파일로 유지.
   - `docker-entrypoint.sh`: 컨테이너 캐시 경로(`.jgo-cache`)를 준비하고 `go run /opt/jgo/main.go` 실행.
 - Container images:
-  - `Dockerfile`: `jgo` 런타임 이미지(`openssh-client` + `go run` 기반).
-  - `workspace.dockerfile`: 원격 작업용 SSH workspace 이미지(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` 포함).
+  - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
 - Tooling:
-  - `Makefile`: `docker-push`, `docker-push-workspace`, `run-partial`, `run-full`, `ssh-key` 제공.
+  - `Makefile`: `docker-push`, `push`, `run-partial`, `run-full`, `ssh-key` 제공.
 
 ## 서비스 구조 요약
 
 - `jgo`는 OpenAI 호환 API 서버로 상주한다.
 - 요청이 오면 입력을 해석하고(옵션) 프롬프트를 최적화한 뒤 실행 프롬프트를 확정한다.
-- 실제 실행은 원격 SSH 대상에서 `codex exec` 단일 실행으로 위임한다.
+- 실제 실행은 컨테이너 내부 `localhost` SSH 대상에서 `codex exec` 단일 실행으로 위임한다.
 - 핵심 목적은 codex가 환경의 CLI(`gh`, `aws`, `kubectl`, `git` 등)를 활용해 다양한 자동화 작업을 수행하는 것이다.
 
 ## Service Overview
@@ -49,7 +48,7 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 3. Prompt Layer (optional):
    - when enabled, calls upstream OpenAI-compatible API and rewrites instruction for codex execution.
 4. Execution Layer:
-   - runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` via SSH target (`JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`) and lets codex use available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
+   - runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` via localhost SSH target (default: `jgo@localhost:22` in container) and lets codex use available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
 5. Observability Layer:
    - every request/run gets `run_id`,
    - API response header includes `X-JGO-Run-ID`,
@@ -163,15 +162,29 @@ CLI list for prompt optimization (from env):
 ## Kubernetes Resident Operation
 
 - Runtime image: `ghcr.io/jungju/jgo:latest` (`Dockerfile`)
-  - Kubernetes 상주 API 서버 용도.
-  - `openssh-client`만 포함하고, `go run /opt/jgo/main.go`로 실행.
-  - 컨테이너 인자 없이 시작하면 자동으로 `serve` 모드.
-- Workspace image: `ghcr.io/jungju/jgo-workspace:latest` (`workspace.dockerfile`)
-  - 원격 작업 노드/개발 워크스페이스 용도.
-  - `openssh-server`, `codex`, `gh`, `kubectl`, `aws` 등 작업 CLI를 포함.
-- 두 이미지는 역할이 분리되어 있음:
-  - `jgo` 이미지: 오케스트레이션/API
-  - `jgo-workspace` 이미지: 실제 codex 작업 실행 환경
+  - Kubernetes 상주 API 서버 + codex 실행 환경을 단일 이미지로 제공.
+  - `main.go`를 포함하고 `go run /opt/jgo/main.go`로 실행.
+  - `openssh-server`, `codex`, `gh`, `kubectl`, `aws` 등을 포함.
+  - 컨테이너 시작 시 `sshd`를 함께 띄우고 localhost SSH로 codex를 실행한다.
+
+Manual first-run checklist (after container startup):
+
+```bash
+jgo-first-run-checklist
+# optional target override:
+# TARGET_HOME=/home/jgo jgo-first-run-checklist
+```
+
+- 체크 항목:
+  - codex 로그인 여부 (`codex login status`)
+  - gh 로그인 여부 (`gh auth status`)
+  - kubectl 연동 여부 (`kubectl config current-context`)
+- `homefiles`를 `/home/jgo/`로 최초 1회 복사한다.
+- 최초 복사 시 marker file (`/home/jgo/.jgo-homefiles-initialized`)을 생성한다.
+- marker file이 있으면 재실행해도 `homefiles` 복사를 건너뛴다.
+- 최초 복사 시 `~/.codex/config.toml`에 아래 설정을 보장한다.
+  - `[sandbox_workspace_write]`
+  - `network_access = true`
 
 ## Cache and Volume
 
@@ -183,9 +196,12 @@ CLI list for prompt optimization (from env):
 
 ## Environment Variables
 
-- Required:
-  - SSH target settings for jgo runtime:
-    - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`
+- Defaulted in container entrypoint:
+  - `JGO_SSH_USER=<USERNAME>` (default `jgo`)
+  - `JGO_SSH_HOST=localhost`
+  - `JGO_SSH_PORT=22`
+- Optional override (outside container/local dev):
+  - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`
 - Required when prompt optimization runs:
   - cases:
     - `jgo run`
@@ -263,13 +279,11 @@ env:
 Use GitHub Container Registry image:
 
 - `ghcr.io/jungju/jgo:latest`
-- `ghcr.io/jungju/jgo-workspace:latest`
 
 Push multi-arch image (amd64, arm64):
 
 ```bash
 make docker-push
-make docker-push-workspace
 ```
 
 ## OpenAI-Compatible API Example
