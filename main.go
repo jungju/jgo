@@ -341,6 +341,15 @@ func loadConfigFromEnv() (Config, error) {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
 	}
+	if cfg.SSHUser == "" {
+		cfg.SSHUser = "jgo"
+	}
+	if cfg.SSHHost == "" {
+		cfg.SSHHost = "localhost"
+	}
+	if cfg.SSHPort == "" {
+		cfg.SSHPort = "22"
+	}
 
 	return cfg, nil
 }

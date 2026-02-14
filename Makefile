@@ -2,8 +2,6 @@ SHELL := /bin/bash
 
 IMAGE ?= ghcr.io/jungju/jgo
 TAG ?= latest
-WORKSPACE_IMAGE ?= ghcr.io/jungju/jgo-workspace
-WORKSPACE_TAG ?= latest
 PLATFORMS ?= linux/amd64,linux/arm64
 ENV_FILE ?= .env
 PROMPT ?=
@@ -11,7 +9,7 @@ PROMPT_OPTIMIZE ?= false
 SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
 SSH_KEY_COMMENT ?= jgo-auto
 
-.PHONY: docker-push docker-push-workspace serve run-partial run-full ssh-key
+.PHONY: docker-push push serve run-partial run-full ssh-key
 
 docker-push:
 	docker buildx build \
@@ -21,15 +19,7 @@ docker-push:
 	  --push \
 	  .
 
-docker-push-workspace:
-	docker buildx build \
-	  --platform $(PLATFORMS) \
-	  -f workspace.dockerfile \
-	  -t $(WORKSPACE_IMAGE):$(WORKSPACE_TAG) \
-	  --push \
-	  .
-
-push: docker-push docker-push-workspace
+push: docker-push
 
 serve:
 	go run main.go serve
