@@ -93,6 +93,7 @@ I do not permit the human system of hiring for this being.
 - `jgo run` executes Step 1 only (prompt optimization preview).
 - It prints optimized prompt text only and does not run repository edit/commit/push.
 - `jgo exec` executes full automation directly from CLI (no API server required).
+- Successful `jgo exec` output is limited to raw `codex exec` response text (no wrapper/fallback JSON).
 - Prompt optimization in full automation is optional and default is OFF.
 - Enable optimization with `--optimize-prompt` or `JGO_OPTIMIZE_PROMPT=true`.
 - `jgo run` / `jgo exec` default `--env-file .env`:
@@ -142,7 +143,7 @@ For every `POST /v1/chat/completions` request:
 3. If prompt optimization is disabled (default), `jgo` uses original instruction as effective prompt.
 4. `jgo` validates `codex login status` on target.
 5. `jgo` runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` once.
-6. `jgo` returns Codex execution response text as OpenAI-compatible chat response content.
+6. `jgo` returns raw Codex execution response text as OpenAI-compatible chat response content.
 
 Prompt optimization toggle:
 

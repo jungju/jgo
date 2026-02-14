@@ -1,7 +1,7 @@
 # jgo SPEC (Frozen)
 
 - Project: `jgo`
-- Spec Version: `1.0.24`
+- Spec Version: `1.0.25`
 - Status: `FROZEN`
 - Last Updated: `2026-02-14`
 
@@ -75,6 +75,9 @@ Core intent:
 10. Runtime/Workspace image split:
    - `Dockerfile` defines the `jgo` runtime/server image.
    - `workspace.dockerfile` defines the remote workspace execution image.
+11. Response output rule:
+   - for successful question/request execution, response content must be limited to raw `codex exec` output.
+   - `jgo` must not prepend wrappers/tags (for example, `[codex]`) or synthesize fallback success payloads.
 
 ## 5. Interfaces
 
@@ -87,8 +90,7 @@ Core intent:
 2. `jgo exec [--env-file .env] "<instruction>"`
    - executes full automation.
    - `--optimize-prompt` enables prompt optimization for this execution.
-   - outputs JSON:
-     - `{"status":"ok"}`.
+   - outputs raw `codex exec` response text only.
 3. `jgo serve [--optimize-prompt]`
    - starts OpenAI-compatible resident server.
 
@@ -99,6 +101,7 @@ Core intent:
 3. `POST /v1/chat/completions`
    - reads latest user message as instruction.
    - runs same automation logic as CLI full flow.
+   - response message content contains raw `codex exec` output on success.
    - includes `X-JGO-Run-ID` response header for log correlation.
 
 ## 5.3 Runtime Artifacts
@@ -148,6 +151,7 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 
 ## 9. Changelog
 
+- `1.0.25` (`2026-02-14`): constrained successful question/request responses to raw codex output only (removed wrapper/fallback success formatting and updated CLI exec output contract).
 - `1.0.24` (`2026-02-14`): clarified the product purpose as Codex-led multi-CLI automation (GitHub/AWS/Kubernetes/repository workflows) and aligned goals/non-goals/invariants wording.
 - `1.0.23` (`2026-02-14`): removed branch field from `jgo exec`/chat fallback success output; response now returns status only.
 - `1.0.22` (`2026-02-14`): removed temporary remote workspace and repo-scoped two-phase execution model; automation now runs a single `codex exec` call per request.
