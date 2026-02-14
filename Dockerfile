@@ -127,15 +127,15 @@ USERNAME="${USERNAME:-jgo}"
 HOME_DIR="/home/${USERNAME}"
 
 if ! id -u "${USERNAME}" >/dev/null 2>&1; then
-  useradd -m -s /bin/bash "${USERNAME}"
-  usermod -aG sudo "${USERNAME}" || true
-  echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}"
-  chmod 0440 "/etc/sudoers.d/${USERNAME}"
+  sudo useradd -m -s /bin/bash "${USERNAME}"
+  sudo usermod -aG sudo "${USERNAME}" || true
+  echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/${USERNAME}" >/dev/null
+  sudo chmod 0440 "/etc/sudoers.d/${USERNAME}"
 fi
 
-mkdir -p /var/run/sshd
+sudo mkdir -p /var/run/sshd
 
-/usr/sbin/sshd
+sudo /usr/sbin/sshd
 
 export JGO_MAIN_FILE="${JGO_MAIN_FILE:-/opt/jgo/main.go}"
 export JGO_SSH_USER="${USERNAME}"
@@ -153,7 +153,8 @@ done
 exec /usr/local/bin/jgo "$@"
 SH
 
-WORKDIR /work
+USER jgo
+WORKDIR /home/jgo/
 ENV JGO_LISTEN_ADDR=:8080
 ENV GOMODCACHE=/opt/jgo/go-mod
 
