@@ -5,3 +5,5 @@ rgo-arm64
 .cache/
 .tools/
 .env
+.kubeconfig
+.jgo-cache/
