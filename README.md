@@ -292,7 +292,8 @@ curl -sS http://localhost:8080/v1/chat/completions \
 - 프롬프트 최적화 ON일 때, `stage=prompt_optimize call_openai` / `stage=prompt_optimize openai_response` 로그에 OpenAI 호환 API endpoint와 status가 함께 출력된다.
 - 원격 명령은 `codex command: ...`와 함께 명령 출력 로그가 기록된다.
   - `codex login status output=...`
-  - `codex exec output=...`
+  - `codex exec stdout output=...`
+  - `codex exec stderr output=...`
 
 Codex 로그인 미완료 처리:
 
