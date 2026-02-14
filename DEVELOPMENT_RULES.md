@@ -1,5 +1,11 @@
 # Development Rules
 
+## Spec Lock
+
+- `SPEC.md` is the source of truth for purpose/goal/scope/invariants.
+- Do not change frozen behavior without explicit user approval.
+- If behavior changes are approved, update `SPEC.md` version and changelog in the same change.
+
 ## Scope
 
 - Keep this project as a minimal MVP.
@@ -9,31 +15,38 @@
 
 ## CLI Rules
 
-- Support only `jgo run "<instruction>"`.
+- Support `jgo serve`, `jgo run`, and `jgo exec`.
+- `jgo run` is prompt-optimization preview mode only.
+- `jgo exec` is full automation mode.
 - Fail fast on invalid input.
 - Print errors to stderr.
 
 ## Runtime Rules
 
-- Use dedicated cache root `JGO_CACHE_DIR` (default `/jgo-cache`).
-- Cache repository mirrors under `<JGO_CACHE_DIR>/repos`.
-- Create per-run work directories under `<JGO_CACHE_DIR>/work`.
+- Use dedicated cache root `.jgo-cache` under startup directory.
+- Create per-run workspace directories under `.jgo-cache/work`.
 - Build Codex env from process environment only.
-- Container entrypoint may preload `.env` into process environment.
-- Keep `.env.example` as the canonical template for runtime variables.
-- Support OpenWebUI/LiteLLM fallback mapping to `OPENAI_BASE_URL`/`OPENAI_API_KEY`.
+- Require SSH target envs: `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`.
+- Support `JGO_SSH_STRICT_HOST_KEY_CHECKING` (default `false`) for SSH host key verification mode.
+- Never print SSH public key logs at startup.
+- Keep default `OPENAI_BASE_URL` as `https://api.openai.com/v1` when unset.
+- Support OpenWebUI/LiteLLM fallback mapping to `OPENAI_API_KEY`.
 - Support OpenWebUI/LiteLLM model fallback mapping to `MODEL`.
-- Validate request executability via OpenAI API before any repository changes.
-- Generate Codex-optimized prompt via OpenAI API.
-- Stop immediately if request is not executable.
-- Always create branch: `jgo/<timestamp>`.
+- Detect repository reference when provided.
+- Generate Codex-optimized prompt via OpenAI API only when optimization is enabled.
+- Prompt optimization default is OFF (`JGO_OPTIMIZE_PROMPT=false`).
+- Build available CLI hints for prompt optimization from environment variables.
+- Execute all repository modification work through `codex exec --full-auto --skip-git-repo-check`.
+- If repository reference exists, create branch: `jgo/<timestamp>`.
 - Pass `KUBECONFIG` when provided.
-- Run `codex exec --full-auto --cd <repo> -` with stdin prompt for code changes.
-- Run `codex exec --full-auto --cd <repo> -` again for commit/push.
+- Run `codex exec --full-auto --skip-git-repo-check --cd <workspace> "<prompt>"` with inline prompt argument for code changes.
+- If repository reference exists, run `codex exec --full-auto --skip-git-repo-check --cd <workspace> "<prompt>"` again for commit/push.
 
 ## Codex Rules
 
-- Codex execution must always use the OpenAI-optimized prompt.
+- Codex execution uses the optimized prompt only when optimization is enabled.
+- Otherwise Codex execution must use the original user instruction.
+- Invoke codex subprocess via SSH target from env (`JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`).
 - `codex login status` must pass before execution.
 - If not logged in, instruct user to run `codex login` after OpenAI-compatible API server startup.
 - Use non-interactive commands only in prompts.
@@ -41,23 +54,21 @@
 
 ## Git Rules
 
-- Ensure `origin` remote exists.
 - Do not amend or rewrite commits.
 - Do not force-push.
 - Commit messages should follow concise Conventional Commits.
 
 ## Build Rules
 
-- Keep Docker build targets minimal: `make docker-build`, `make docker-push`.
+- Keep Docker build targets minimal: `make docker-push`.
 - `make docker-push` must push multi-arch image for both `linux/amd64` and `linux/arm64`.
-- Docker base image must be Ubuntu.
-- Docker image must include ARM Codex CLI, AWS CLI, GitHub CLI, `kubectl`, and `go` CLI.
+- Docker image may use an official Go runtime base image.
+- Use single `Dockerfile` only.
+- Docker image must install `openssh-client` only (no local codex/aws/gh/kubectl install).
 - Docker runtime must execute `jgo` as script (`go run`), not prebuilt binary.
-- Docker defaults must set persistent cache paths (`JGO_CACHE_DIR`, `GOCACHE`, `GOMODCACHE`, `CODEX_HOME`).
-- Docker runtime must auto-export `.env` variables through entrypoint (`JGO_ENV_FILE`).
+- Docker defaults must set persistent cache paths (`GOCACHE`, `GOMODCACHE`, `CODEX_HOME`).
 - Kubernetes deployment should mount persistent volume to cache root.
 
 ## Safety Rules
 
-- Operate only inside temporary cloned repository.
-- If codex produces no changes, stop with error.
+- Operate only inside temporary workspace.
