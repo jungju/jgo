@@ -2,29 +2,56 @@ SHELL := /bin/bash
 
 IMAGE ?= ghcr.io/jungju/jgo
 TAG ?= latest
+WORKSPACE_IMAGE ?= ghcr.io/jungju/jgo-workspace
+WORKSPACE_TAG ?= latest
 PLATFORMS ?= linux/amd64,linux/arm64
+ENV_FILE ?= .env
+PROMPT ?=
+PROMPT_OPTIMIZE ?= false
+SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
+SSH_KEY_COMMENT ?= jgo-auto
 
-CODEX_TAG ?= rust-v0.101.0
-GH_TAG ?= v2.86.0
-KUBECTL_VERSION ?=
-
-.PHONY: docker-build docker-push
-
-docker-build:
-	docker buildx build \
-	  --platform $(PLATFORMS) \
-	  --build-arg CODEX_TAG=$(CODEX_TAG) \
-	  --build-arg GH_TAG=$(GH_TAG) \
-	  --build-arg KUBECTL_VERSION=$(KUBECTL_VERSION) \
-	  -t $(IMAGE):$(TAG) \
-	  .
+.PHONY: docker-push docker-push-workspace serve run-partial run-full ssh-key
 
 docker-push:
 	docker buildx build \
 	  --platform $(PLATFORMS) \
-	  --build-arg CODEX_TAG=$(CODEX_TAG) \
-	  --build-arg GH_TAG=$(GH_TAG) \
-	  --build-arg KUBECTL_VERSION=$(KUBECTL_VERSION) \
+	  -f Dockerfile \
 	  -t $(IMAGE):$(TAG) \
 	  --push \
 	  .
+
+docker-push-workspace:
+	docker buildx build \
+	  --platform $(PLATFORMS) \
+	  -f workspace.dockerfile \
+	  -t $(WORKSPACE_IMAGE):$(WORKSPACE_TAG) \
+	  --push \
+	  .
+
+serve:
+	go run main.go serve
+
+run-partial:
+	@if [ -z "$(PROMPT)" ]; then \
+	  echo 'usage: make run-partial PROMPT="작업 지시"'; \
+	  exit 1; \
+	fi
+	go run main.go run --env-file $(ENV_FILE) "$(PROMPT)"
+
+run-full:
+	@if [ -z "$(PROMPT)" ]; then \
+	  echo 'usage: make run-full PROMPT="작업 지시"'; \
+	  exit 1; \
+	fi
+	go run main.go exec --env-file $(ENV_FILE) --optimize-prompt=$(PROMPT_OPTIMIZE) "$(PROMPT)"
+
+ssh-key:
+	@mkdir -p "$(dir $(SSH_KEY_PATH))"
+	@if [ -f "$(SSH_KEY_PATH)" ]; then \
+	  echo "ssh key already exists: $(SSH_KEY_PATH)"; \
+	else \
+	  ssh-keygen -q -t ed25519 -N "" -C "$(SSH_KEY_COMMENT)" -f "$(SSH_KEY_PATH)"; \
+	  echo "ssh key generated: $(SSH_KEY_PATH)"; \
+	fi
+	@echo "public key path: $(SSH_KEY_PATH).pub"
