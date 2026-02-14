@@ -295,16 +295,16 @@ func execCommand(cfg Config, args []string) error {
 		cfg.OptimizePrompt,
 	)
 
-	if _, err := runAutomation(ctx, cfg, instruction); err != nil {
+	result, err := runAutomation(ctx, cfg, instruction)
+	if err != nil {
 		return err
 	}
 
-	out := map[string]string{
-		"status": "ok",
+	if result.CodexResponse == "" {
+		return nil
 	}
-	enc := json.NewEncoder(os.Stdout)
-	if err := enc.Encode(out); err != nil {
-		return fmt.Errorf("print exec output: %w", err)
+	if _, err := io.WriteString(os.Stdout, result.CodexResponse); err != nil {
+		return fmt.Errorf("print codex output: %w", err)
 	}
 	return nil
 }
@@ -479,10 +479,7 @@ func handleChatCompletions(cfg Config) http.HandlerFunc {
 			return
 		}
 
-		content := strings.TrimSpace(result.CodexResponse)
-		if content == "" {
-			content = `{"status":"ok"}`
-		}
+		content := result.CodexResponse
 		if req.Stream {
 			if err := writeStreamingChatCompletion(w, servedModelID, content); err != nil {
 				logRunf(ctx, "stream write failed: %v", err)
@@ -741,15 +738,12 @@ func runAutomation(ctx context.Context, cfg Config, instruction string) (Automat
 	if err != nil {
 		return AutomationResult{}, fmt.Errorf("codex execution failed: %w", err)
 	}
-	codexResponses := make([]string, 0, 1)
-	if s := strings.TrimSpace(execResp); s != "" {
-		codexResponses = append(codexResponses, "[codex]\n"+s)
-	}
+	codexOutput := strings.TrimSpace(execResp)
 	logRunf(ctx, "stage=codex_exec done")
 	logRunf(ctx, "automation success")
 
 	return AutomationResult{
-		CodexResponse: strings.Join(codexResponses, "\n\n"),
+		CodexResponse: codexOutput,
 	}, nil
 }
 
