@@ -868,12 +868,12 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 }
 
 func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt string) (string, error) {
-	args := []string{"exec", "--full-auto", "--skip-git-repo-check", prompt}
+	args := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", "reasoning_effort=\"xhigh\"", prompt}
 	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
 	sshArgs := buildSSHArgs(cfg, codexCommand)
 
 	// Avoid logging the full inline prompt while still reflecting argument-mode execution.
-	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "<inline-prompt>"}
+	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", "reasoning_effort=\"xhigh\"", "<inline-prompt>"}
 	logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
 	logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
 	logRunf(
