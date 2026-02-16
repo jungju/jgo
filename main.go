@@ -26,6 +26,7 @@ const (
 	defaultListenAddr = ":8080"
 	defaultOpenAIBase = "https://api.openai.com/v1"
 	servedModelID     = "jgo"
+	defaultReasoning  = "xhigh"
 )
 
 var errCodexLoginRequired = errors.New("codex login is required")
@@ -33,13 +34,14 @@ var errCodexLoginRequired = errors.New("codex login is required")
 var runCounter atomic.Uint64
 
 type Config struct {
-	CodexBin       string
-	ListenAddr     string
-	SSHUser        string
-	SSHHost        string
-	SSHPort        string
-	SSHKeyPath     string
-	OptimizePrompt bool
+	CodexBin        string
+	ListenAddr      string
+	SSHUser         string
+	SSHHost         string
+	SSHPort         string
+	SSHKeyPath      string
+	ReasoningEffort string
+	OptimizePrompt  bool
 }
 
 type OpenAIConfig struct {
@@ -277,12 +279,13 @@ func loadConfigFromEnv() (Config, error) {
 	}
 
 	cfg := Config{
-		CodexBin:       strings.TrimSpace(os.Getenv("CODEX_BIN")),
-		ListenAddr:     strings.TrimSpace(os.Getenv("JGO_LISTEN_ADDR")),
-		SSHUser:        strings.TrimSpace(os.Getenv("JGO_SSH_USER")),
-		SSHHost:        strings.TrimSpace(os.Getenv("JGO_SSH_HOST")),
-		SSHPort:        strings.TrimSpace(os.Getenv("JGO_SSH_PORT")),
-		OptimizePrompt: optimizePrompt,
+		CodexBin:        strings.TrimSpace(os.Getenv("CODEX_BIN")),
+		ListenAddr:      strings.TrimSpace(os.Getenv("JGO_LISTEN_ADDR")),
+		SSHUser:         strings.TrimSpace(os.Getenv("JGO_SSH_USER")),
+		SSHHost:         strings.TrimSpace(os.Getenv("JGO_SSH_HOST")),
+		SSHPort:         strings.TrimSpace(os.Getenv("JGO_SSH_PORT")),
+		ReasoningEffort: strings.TrimSpace(os.Getenv("CODEX_REASONING_EFFORT")),
+		OptimizePrompt:  optimizePrompt,
 	}
 
 	if cfg.CodexBin == "" {
@@ -299,6 +302,9 @@ func loadConfigFromEnv() (Config, error) {
 	}
 	if cfg.SSHPort == "" {
 		cfg.SSHPort = "22"
+	}
+	if cfg.ReasoningEffort == "" {
+		cfg.ReasoningEffort = defaultReasoning
 	}
 
 	return cfg, nil
@@ -868,12 +874,13 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 }
 
 func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt string) (string, error) {
-	args := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", "reasoning_effort=\"xhigh\"", prompt}
+	reasoningArg := fmt.Sprintf("reasoning_effort=%q", cfg.ReasoningEffort)
+	args := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", reasoningArg, prompt}
 	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
 	sshArgs := buildSSHArgs(cfg, codexCommand)
 
 	// Avoid logging the full inline prompt while still reflecting argument-mode execution.
-	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", "reasoning_effort=\"xhigh\"", "<inline-prompt>"}
+	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", reasoningArg, "<inline-prompt>"}
 	logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
 	logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
 	logRunf(
