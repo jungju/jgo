@@ -1,6 +1,6 @@
 # jgo
 
-Authoritative behavior baseline: `SPEC.md` (`FROZEN`).
+Authoritative behavior baseline: `SPEC/SPEC.md` (`FROZEN`).
 
 `jgo` is a resident Go server that exposes an OpenAI-compatible API and runs `codex` CLI prompts to:
 
