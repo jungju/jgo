@@ -1,7 +1,5 @@
 jgo
 jgo-arm64
-rgo
-rgo-arm64
 .cache/
 .tools/
 .env
