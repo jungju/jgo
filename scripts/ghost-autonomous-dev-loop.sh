@@ -129,7 +129,7 @@ PLAN_BODY="$(cat <<EOF
 
 ## Risk / Rollback
 - Risk: accidental conflict with dirty tree.
-- Rollback: revert only this run's commit via `git revert <sha>`.
+- Rollback: revert only this run's commit via 'git revert <sha>'.
 EOF
 )"
 write_file "${RUN_DIR}/01_plan.md" "${PLAN_BODY}"
