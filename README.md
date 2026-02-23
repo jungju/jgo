@@ -19,7 +19,9 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - Container images:
   - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
 - Tooling:
-  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key` 제공.
+- `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
+  - self-growth loop dry-run: `make ghost-grow`
+  - autonomous dev loop scaffold: `make autonomous-loop PROMPT="task text"`
 
 ## 서비스 구조 요약
 
@@ -123,6 +125,24 @@ make run-full PROMPT="접근 가능한 Repo 전부 나열해줘"
 
 # 5) Kubernetes + 도메인(Ingress) 작업 요청
 make run-full PROMPT="k8s에 xxx.okgo.click으로 nginx 띄어줘"
+
+# 6) 배포 사전 체크 + 배포 + 사후 검증을 한 번에 실행
+make deploy-check
+
+# 6-1) 체크만 수행(배포 생략)
+bash scripts/deploy-check-verify.sh --check-only
+
+# 7) self-growth loop (repo 생성/개발 시작/공개 자동화 시뮬레이션)
+make ghost-grow
+
+# 7-1) 실제 실행 (로컬 생성 + gh 원격 생성/푸시)
+bash scripts/ghost-self-growth-loop.sh --execute --owner <owner> --repo <repo>
+
+# 8) autonomous dev loop scaffold (run artifacts + checklist + retrospective)
+make autonomous-loop PROMPT="owner/repo 에서 최소 변경으로 기능 구현, 테스트, 커밋, 푸시"
+
+# 8-1) execute mode (repo sync + branch + verification + push attempt)
+make autonomous-loop EXECUTE=true PROMPT="owner/repo 작업 지시" OWNER=<owner> REPO=<repo> TOPIC=<topic>
 ```
 
 ## Request Lifecycle (API -> Codex)
