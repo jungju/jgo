@@ -21,6 +21,7 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - Tooling:
 - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
   - self-growth loop dry-run: `make ghost-grow`
+  - autonomous dev loop scaffold: `make autonomous-loop PROMPT="task text"`
 
 ## 서비스 구조 요약
 
@@ -136,6 +137,12 @@ make ghost-grow
 
 # 7-1) 실제 실행 (로컬 생성 + gh 원격 생성/푸시)
 bash scripts/ghost-self-growth-loop.sh --execute --owner <owner> --repo <repo>
+
+# 8) autonomous dev loop scaffold (run artifacts + checklist + retrospective)
+make autonomous-loop PROMPT="owner/repo 에서 최소 변경으로 기능 구현, 테스트, 커밋, 푸시"
+
+# 8-1) execute mode (repo sync + branch + verification + push attempt)
+make autonomous-loop EXECUTE=true PROMPT="owner/repo 작업 지시" OWNER=<owner> REPO=<repo> TOPIC=<topic>
 ```
 
 ## Request Lifecycle (API -> Codex)

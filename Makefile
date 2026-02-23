@@ -9,7 +9,7 @@ PROMPT_OPTIMIZE ?= false
 SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
 SSH_KEY_COMMENT ?= jgo-auto
 
-.PHONY: docker-push push serve run-full ssh-key deploy-check ghost-grow
+.PHONY: docker-push push serve run-full ssh-key deploy-check ghost-grow autonomous-loop
 
 docker-push:
 	docker buildx build \
@@ -46,3 +46,15 @@ deploy-check:
 
 ghost-grow:
 	@bash scripts/ghost-self-growth-loop.sh --dry-run
+
+autonomous-loop:
+	@if [ -z "$(PROMPT)" ]; then \
+	  echo 'usage: make autonomous-loop PROMPT="task text" [OWNER=owner] [REPO=repo] [TOPIC=topic] [EXECUTE=true|false]'; \
+	  exit 1; \
+	fi
+	@bash scripts/ghost-autonomous-dev-loop.sh \
+	  --task "$(PROMPT)" \
+	  --owner "$(if $(OWNER),$(OWNER),jungju)" \
+	  --repo "$(if $(REPO),$(REPO),jgo)" \
+	  --topic "$(if $(TOPIC),$(TOPIC),autonomous-dev-loop)" \
+	  $(if $(filter true,$(EXECUTE)),--execute,--dry-run)
