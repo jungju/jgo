@@ -19,7 +19,7 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - Container images:
   - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
 - Tooling:
-  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key` 제공.
+  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
 
 ## 서비스 구조 요약
 
@@ -123,6 +123,12 @@ make run-full PROMPT="접근 가능한 Repo 전부 나열해줘"
 
 # 5) Kubernetes + 도메인(Ingress) 작업 요청
 make run-full PROMPT="k8s에 xxx.okgo.click으로 nginx 띄어줘"
+
+# 6) 배포 사전 체크 + 배포 + 사후 검증을 한 번에 실행
+make deploy-check
+
+# 6-1) 체크만 수행(배포 생략)
+bash scripts/deploy-check-verify.sh --check-only
 ```
 
 ## Request Lifecycle (API -> Codex)
