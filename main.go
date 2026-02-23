@@ -27,6 +27,9 @@ const (
 	defaultOpenAIBase = "https://api.openai.com/v1"
 	servedModelID     = "jgo"
 	defaultReasoning  = "xhigh"
+	defaultTransport  = "local"
+	transportLocal    = "local"
+	transportSSH      = "ssh"
 )
 
 var errCodexLoginRequired = errors.New("codex login is required")
@@ -36,6 +39,7 @@ var runCounter atomic.Uint64
 type Config struct {
 	CodexBin        string
 	ListenAddr      string
+	ExecTransport   string
 	SSHUser         string
 	SSHHost         string
 	SSHPort         string
@@ -184,6 +188,7 @@ func serveCommand(cfg Config, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	listen := fs.String("listen", cfg.ListenAddr, "listen address")
+	transport := fs.String("transport", cfg.ExecTransport, "execution transport: local or ssh")
 	optimizePrompt := fs.Bool("optimize-prompt", cfg.OptimizePrompt, "enable prompt optimization before codex execution")
 
 	if err := fs.Parse(args); err != nil {
@@ -194,8 +199,9 @@ func serveCommand(cfg Config, args []string) error {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
 	}
+	cfg.ExecTransport = strings.TrimSpace(*transport)
 	cfg.OptimizePrompt = *optimizePrompt
-	if err := validateSSHConfig(&cfg); err != nil {
+	if err := validateExecutionConfig(&cfg); err != nil {
 		return err
 	}
 
@@ -204,8 +210,8 @@ func serveCommand(cfg Config, args []string) error {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  jgo serve [--optimize-prompt]")
-	fmt.Fprintln(os.Stderr, "  jgo exec [--env-file .env] [--optimize-prompt] \"<instruction>\"")
+	fmt.Fprintln(os.Stderr, "  jgo serve [--transport local|ssh] [--optimize-prompt]")
+	fmt.Fprintln(os.Stderr, "  jgo exec [--env-file .env] [--transport local|ssh] [--optimize-prompt] \"<instruction>\"")
 	fmt.Fprintln(os.Stderr, "default: jgo serve")
 }
 
@@ -214,6 +220,7 @@ func execCommand(cfg Config, args []string) error {
 	fs.SetOutput(os.Stderr)
 
 	envFile := fs.String("env-file", ".env", "path to env file")
+	transport := fs.String("transport", cfg.ExecTransport, "execution transport: local or ssh")
 	optimizePrompt := fs.Bool("optimize-prompt", cfg.OptimizePrompt, "enable prompt optimization before codex execution")
 
 	if err := fs.Parse(args); err != nil {
@@ -222,6 +229,16 @@ func execCommand(cfg Config, args []string) error {
 	if fs.NArg() == 0 {
 		return fmt.Errorf("missing instruction argument")
 	}
+	transportFlagSet := false
+	optimizePromptFlagSet := false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "transport":
+			transportFlagSet = true
+		case "optimize-prompt":
+			optimizePromptFlagSet = true
+		}
+	})
 
 	instruction := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	if instruction == "" {
@@ -238,8 +255,13 @@ func execCommand(cfg Config, args []string) error {
 		return err
 	}
 	cfg = reloadedCfg
-	cfg.OptimizePrompt = *optimizePrompt
-	if err := validateSSHConfig(&cfg); err != nil {
+	if transportFlagSet {
+		cfg.ExecTransport = strings.TrimSpace(*transport)
+	}
+	if optimizePromptFlagSet {
+		cfg.OptimizePrompt = *optimizePrompt
+	}
+	if err := validateExecutionConfig(&cfg); err != nil {
 		return err
 	}
 
@@ -281,6 +303,7 @@ func loadConfigFromEnv() (Config, error) {
 	cfg := Config{
 		CodexBin:        strings.TrimSpace(os.Getenv("CODEX_BIN")),
 		ListenAddr:      strings.TrimSpace(os.Getenv("JGO_LISTEN_ADDR")),
+		ExecTransport:   strings.TrimSpace(os.Getenv("JGO_EXEC_TRANSPORT")),
 		SSHUser:         strings.TrimSpace(os.Getenv("JGO_SSH_USER")),
 		SSHHost:         strings.TrimSpace(os.Getenv("JGO_SSH_HOST")),
 		SSHPort:         strings.TrimSpace(os.Getenv("JGO_SSH_PORT")),
@@ -293,6 +316,9 @@ func loadConfigFromEnv() (Config, error) {
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
+	}
+	if cfg.ExecTransport == "" {
+		cfg.ExecTransport = defaultTransport
 	}
 	if cfg.SSHUser == "" {
 		cfg.SSHUser = "jgo"
@@ -308,6 +334,30 @@ func loadConfigFromEnv() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func validateExecutionConfig(cfg *Config) error {
+	transport, err := normalizeTransport(cfg.ExecTransport)
+	if err != nil {
+		return err
+	}
+	cfg.ExecTransport = transport
+	if transport != transportSSH {
+		return nil
+	}
+	return validateSSHConfig(cfg)
+}
+
+func normalizeTransport(raw string) (string, error) {
+	transport := strings.ToLower(strings.TrimSpace(raw))
+	switch transport {
+	case "", transportLocal:
+		return transportLocal, nil
+	case transportSSH:
+		return transportSSH, nil
+	default:
+		return "", fmt.Errorf("invalid JGO_EXEC_TRANSPORT %q (expected: local or ssh)", raw)
+	}
 }
 
 func validateSSHConfig(cfg *Config) error {
@@ -649,7 +699,7 @@ func sanitizeURL(raw string) string {
 
 func runAutomation(ctx context.Context, cfg Config, instruction string) (AutomationResult, error) {
 	logRunf(ctx, "automation start")
-	if err := validateSSHConfig(&cfg); err != nil {
+	if err := validateExecutionConfig(&cfg); err != nil {
 		return AutomationResult{}, err
 	}
 	envMap := environToMap(os.Environ())
@@ -685,10 +735,14 @@ func runAutomation(ctx context.Context, cfg Config, instruction string) (Automat
 		logRunf(ctx, "stage=prompt_optimize skipped: enabled=false")
 	}
 
-	if _, err := exec.LookPath("ssh"); err != nil {
-		return AutomationResult{}, fmt.Errorf("ssh is required in PATH: %w", err)
+	if cfg.ExecTransport == transportSSH {
+		if _, err := exec.LookPath("ssh"); err != nil {
+			return AutomationResult{}, fmt.Errorf("ssh is required in PATH when JGO_EXEC_TRANSPORT=ssh: %w", err)
+		}
+		logRunf(ctx, "transport=ssh target=%s", formatSSHAddress(cfg))
+	} else {
+		logRunf(ctx, "transport=local target=local")
 	}
-	logRunf(ctx, "transport binary found: ssh (target=%s)", formatSSHAddress(cfg))
 
 	codexEnv := mapToEnviron(envMap)
 	logRunf(ctx, "stage=codex_login_check start")
@@ -842,10 +896,41 @@ func parseRequestPlan(raw string) (RequestPlan, error) {
 
 func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error {
 	args := []string{"login", "status"}
-	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
-	sshArgs := buildSSHArgs(cfg, codexCommand)
-	logRunf(ctx, "codex command: %s", formatCommand("ssh", sshArgs...))
-	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+	target := formatExecutionTarget(cfg)
+	if cfg.ExecTransport == transportSSH {
+		codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
+		sshArgs := buildSSHArgs(cfg, codexCommand)
+		logRunf(ctx, "codex command: %s", formatCommand("ssh", sshArgs...))
+		cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+		cmd.Env = codexEnv
+		out, err := cmd.CombinedOutput()
+		logCommandOutput(ctx, "codex login status", out)
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg == "" {
+				msg = err.Error()
+			}
+			if isCodexLoginRequiredOutput(msg) {
+				return fmt.Errorf(
+					"%w; target=%s cmd=%s detail=%s",
+					errCodexLoginRequired,
+					target,
+					formatCommand(cfg.CodexBin, args...),
+					msg,
+				)
+			}
+			return fmt.Errorf(
+				"codex login check failed (target=%s cmd=%s): %s",
+				target,
+				formatCommand(cfg.CodexBin, args...),
+				msg,
+			)
+		}
+		return nil
+	}
+
+	logRunf(ctx, "codex command: %s", formatCommand(cfg.CodexBin, args...))
+	cmd := exec.CommandContext(ctx, cfg.CodexBin, args...)
 	cmd.Env = codexEnv
 	out, err := cmd.CombinedOutput()
 	logCommandOutput(ctx, "codex login status", out)
@@ -858,14 +943,14 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 			return fmt.Errorf(
 				"%w; target=%s cmd=%s detail=%s",
 				errCodexLoginRequired,
-				formatSSHAddress(cfg),
+				target,
 				formatCommand(cfg.CodexBin, args...),
 				msg,
 			)
 		}
 		return fmt.Errorf(
 			"codex login check failed (target=%s cmd=%s): %s",
-			formatSSHAddress(cfg),
+			target,
 			formatCommand(cfg.CodexBin, args...),
 			msg,
 		)
@@ -876,21 +961,35 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt string) (string, error) {
 	reasoningArg := fmt.Sprintf("reasoning_effort=%q", cfg.ReasoningEffort)
 	args := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", reasoningArg, prompt}
-	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
-	sshArgs := buildSSHArgs(cfg, codexCommand)
-
-	// Avoid logging the full inline prompt while still reflecting argument-mode execution.
 	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", reasoningArg, "<inline-prompt>"}
-	logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
-	logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
-	logRunf(
-		ctx,
-		"codex command: %s (prompt_len=%d prompt_preview=%q)",
-		formatCommand("ssh", logSSHArgs...),
-		len(prompt),
-		truncateForLog(prompt, 240),
-	)
-	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+	var cmd *exec.Cmd
+	target := formatExecutionTarget(cfg)
+	if cfg.ExecTransport == transportSSH {
+		codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
+		sshArgs := buildSSHArgs(cfg, codexCommand)
+		logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
+		logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
+		logRunf(
+			ctx,
+			"codex command: %s (target=%s prompt_len=%d prompt_preview=%q)",
+			formatCommand("ssh", logSSHArgs...),
+			target,
+			len(prompt),
+			truncateForLog(prompt, 240),
+		)
+		cmd = exec.CommandContext(ctx, "ssh", sshArgs...)
+	} else {
+		logRunf(
+			ctx,
+			"codex command: %s (target=%s prompt_len=%d prompt_preview=%q)",
+			formatCommand(cfg.CodexBin, logArgs...),
+			target,
+			len(prompt),
+			truncateForLog(prompt, 240),
+		)
+		cmd = exec.CommandContext(ctx, cfg.CodexBin, args...)
+	}
+
 	cmd.Env = codexEnv
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
@@ -948,6 +1047,13 @@ func formatSSHAddress(cfg Config) string {
 		return target
 	}
 	return target + ":" + port
+}
+
+func formatExecutionTarget(cfg Config) string {
+	if cfg.ExecTransport == transportSSH {
+		return formatSSHAddress(cfg)
+	}
+	return "local"
 }
 
 func buildWorkspacePrompt(optimizedPrompt string, availableCLIs []string) string {

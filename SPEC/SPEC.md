@@ -1,9 +1,9 @@
 # jgo SPEC (Frozen)
 
 - Project: `jgo`
-- Spec Version: `1.0.31`
+- Spec Version: `1.0.33`
 - Status: `FROZEN`
-- Last Updated: `2026-02-14`
+- Last Updated: `2026-02-24`
 
 ## 1. Purpose
 
@@ -149,7 +149,70 @@ Fallbacks:
 3. Do not use destructive git rewrite flows (force-push/amend/reset).
 4. Keep prompts scoped and minimal.
 
-## 8. Spec Freeze Policy
+## 8. Kubernetes Reference Deployment & Test Flow (AI Namespace)
+
+Use the following defaults for manual deployment/tests:
+
+- Kubernetes namespace: `ai`
+- NodeIP: `192.168.50.160`
+- API service: `8080`
+- SSH test nodeport: `30110` (SSH only)
+- Workload/service name assumed: `jgo` (use your actual Deployment/Service name if different)
+
+```bash
+# 1) Prepare reference variables
+export K8S_NAMESPACE=ai
+export K8S_NODE_IP=192.168.50.160
+export K8S_SERVICE_PORT=8080
+export K8S_WORKLOAD=jgo
+export PLATFORMS=linux/arm64
+make docker-push TAG=latest PLATFORMS="$PLATFORMS"
+
+# 2) Confirm current target state
+kubectl -n "$K8S_NAMESPACE" get deploy "$K8S_WORKLOAD" -o wide
+kubectl -n "$K8S_NAMESPACE" get svc "$K8S_WORKLOAD" -o wide
+kubectl -n "$K8S_NAMESPACE" get pods -l app="$K8S_WORKLOAD"
+
+# 3) Roll out a new image (optional)
+#    IMAGE=ghcr.io/<owner>/jgo:<tag>
+export IMAGE="ghcr.io/jungju/jgo:latest"
+kubectl -n "$K8S_NAMESPACE" set image \
+  deployment/"$K8S_WORKLOAD" \
+  "$K8S_WORKLOAD=$IMAGE" \
+  "setup-home-permissions=$IMAGE"
+kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_WORKLOAD" --timeout=180s
+
+# 4) Pod readiness check
+kubectl -n "$K8S_NAMESPACE" wait --for=condition=Ready pod -l app="$K8S_WORKLOAD" --timeout=180s
+
+# 5) Local API smoke test (no NodePort dependency)
+kubectl -n "$K8S_NAMESPACE" port-forward svc/"$K8S_WORKLOAD" "${K8S_SERVICE_PORT}:$K8S_SERVICE_PORT"
+curl -sS "http://127.0.0.1:$K8S_SERVICE_PORT/healthz"
+curl -sS -H "Content-Type: application/json" \
+  -d '{"model":"jgo","messages":[{"role":"user","content":"ping"}],"stream":false}' \
+  "http://127.0.0.1:$K8S_SERVICE_PORT/v1/chat/completions"
+```
+
+## 9. Automated Verification Playbook
+
+Use the helper scripts for repeatable validation:
+
+```bash
+# API smoke test (health, models, chat completion)
+make smoke-test
+
+# Codex login status + codex exec + API login behavior verification
+make codex-auth-test
+```
+
+Common options:
+
+- `K8S_NAMESPACE`, `K8S_WORKLOAD`, `K8S_SERVICE_PORT`, `K8S_LOCAL_PORT`: Kubernetes defaults for the smoke setup.
+- `SMOKE_TEST_BASE_URL`: direct API URL to bypass kubectl.
+- `CODEX_AUTH_EXPECT=required|ok|auto`: force expectation in `codex-auth-test`.
+- `CODEX_AUTH_SKIP_CODEX_EXEC=true`: skip CLI execution check and only verify API behavior.
+
+## 10. Spec Freeze Policy
 
 This specification is locked.
 
@@ -158,8 +221,10 @@ Any behavior change that affects goals, interfaces, invariants, or execution mod
 2. `SPEC.md` version bump,
 3. changelog entry in this section.
 
-## 9. Changelog
+## 11. Changelog
 
+- `1.0.33` (`2026-02-24`): documented automated verification flow and added Makefile/script integration for smoke-test and codex auth/exec checks.
+- `1.0.32` (`2026-02-24`): added ARM64 deployment flow to SPEC and clarified that NodePort 30110 maps SSH(22), not API traffic.
 - `1.0.31` (`2026-02-14`): removed CLI `run` mode and `make run-partial`; execution CLI path is now `jgo exec` (`make run-full`) only.
 - `1.0.30` (`2026-02-14`): simplified SSH host-key behavior in runtime/docs and extended first-run checklist to provision SSH key files plus `~/.ssh/authorized_keys` registration.
 - `1.0.29` (`2026-02-14`): renamed manual bootstrap script to `jgo-first-run-checklist`, added codex/gh/kubectl checks, and enforced one-time homefiles copy with marker-file guard.
