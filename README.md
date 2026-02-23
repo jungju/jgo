@@ -224,6 +224,30 @@ CLI list for prompt optimization (from env):
   - 기본 실행은 로컬 직접 실행(`JGO_EXEC_TRANSPORT=local`)이며 SSH 서버 기동이 필요 없다.
   - 필요할 때만 `JGO_EXEC_TRANSPORT=ssh` + `JGO_SSH_*` 설정으로 원격 SSH 실행을 사용한다.
 
+## Recommended Remote Operation (지속 운영)
+
+`jgo`는 SSH 데몬을 내장하지 않으므로, 평소 자동화 처리는 API 모드(`JGO_EXEC_TRANSPORT=local`)로 운영하는 방식이 가장 안정적입니다.
+
+- API 테스트/운영 (권장)
+  ```bash
+  kubectl -n ai port-forward svc/jgo 8080:8080
+  curl -sS -H "Content-Type: application/json" \
+    -d '{"model":"jgo","messages":[{"role":"user","content":"ping"}],"stream":false}' \
+    http://127.0.0.1:8080/v1/chat/completions
+  ```
+
+- SSH는 디버깅/수동 확인용으로만 사용
+  - `jgo` 파드 자체는 SSH 서버를 띄우지 않으므로, `jgo` NodePort(예: 30110)로의 SSH 접근은 현재 권장하지 않습니다.
+  - 수동 셸이 필요하면 `workspace` SSH 노드포트를 사용하세요.
+    ```bash
+    ssh -p 32222 jgo@192.168.50.160
+    ```
+
+- SSH 기반 자동 실행이 필요할 때(고급 운영)
+  - 실행 모드: `JGO_EXEC_TRANSPORT=ssh`
+  - 대상: `JGO_SSH_USER=jgo`, `JGO_SSH_HOST=workspace`, `JGO_SSH_PORT=22`
+  - 단, `workspace` 측 `~/.ssh/authorized_keys`에 공개키가 선행 등록되어야 합니다.
+
 Manual first-run checklist (after container startup):
 
 ```bash
