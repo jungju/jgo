@@ -9,7 +9,7 @@ PROMPT_OPTIMIZE ?= false
 SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
 SSH_KEY_COMMENT ?= jgo-auto
 
-.PHONY: docker-push push serve run-full ssh-key deploy-check ghost-grow autonomous-loop
+.PHONY: docker-push push serve run-full ssh-key deploy-check ghost-grow autonomous-loop evolve-24h
 
 docker-push:
 	docker buildx build \
@@ -58,3 +58,11 @@ autonomous-loop:
 	  --repo "$(if $(REPO),$(REPO),jgo)" \
 	  --topic "$(if $(TOPIC),$(TOPIC),autonomous-dev-loop)" \
 	  $(if $(filter true,$(EXECUTE)),--execute,--dry-run)
+
+evolve-24h:
+	@bash scripts/ghost-evolve-24h.sh \
+	  --owner "$(if $(OWNER),$(OWNER),jungju)" \
+	  --repo "$(if $(REPO),$(REPO),jgo)" \
+	  --duration-hours "$(if $(HOURS),$(HOURS),24)" \
+	  --interval-minutes "$(if $(INTERVAL_MINUTES),$(INTERVAL_MINUTES),30)" \
+	  $(if $(LOG_FILE),--log-file "$(LOG_FILE)",)

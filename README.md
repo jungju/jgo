@@ -146,6 +146,12 @@ make autonomous-loop PROMPT="owner/repo 에서 최소 변경으로 기능 구현
 
 # 8-1) execute mode (repo sync + branch + verification + push attempt)
 make autonomous-loop EXECUTE=true PROMPT="owner/repo 작업 지시" OWNER=<owner> REPO=<repo> TOPIC=<topic>
+
+# 9) 24시간 self-evolution loop (codex 반복 실행)
+make evolve-24h OWNER=<owner> REPO=<repo> HOURS=24 INTERVAL_MINUTES=30
+
+# 9-1) 직접 실행 (로그 파일 지정)
+bash scripts/ghost-evolve-24h.sh --owner <owner> --repo <repo> --duration-hours 24 --interval-minutes 30 --log-file ~/runs/jgo-evolve.log
 ```
 
 ## Web Tetris Static Site (`chat.okgo.click`)
