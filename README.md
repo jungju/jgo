@@ -176,7 +176,7 @@ node -e 'const http=require("http"),fs=require("fs"),path=require("path");const 
 1. 우측 상단 `Settings`에서 Endpoint URL(예: `https://<host>/v1/chat/completions`) 입력
 2. 필요 시 API Key/Model 입력 후 Save
 3. 하단 입력창으로 커밋 로그/PR 상태/테스트/배포 로그를 전송
-4. 응답은 고정 포맷(상태 요약/이상 징후/구조 분석/개선/Top3 행동)으로 유지
+4. 응답은 고정 포맷(상태 요약/이상 징후/구조 분석/개선/Top3 행동/고급 분석)으로 유지
 
 배포 (GitHub Pages):
 1. GitHub 저장소 `Settings -> Pages`에서 Source를 `GitHub Actions`로 설정
