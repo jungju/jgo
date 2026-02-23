@@ -251,7 +251,7 @@ jgo-first-run-checklist
 - Cached data:
   - go build cache: `.jgo-cache/go-build`
   - go module cache (preloaded in image): `/home/jgo/.cache/go-mod` (override with `GOMODCACHE`)
-  - codex home: `.jgo-cache/codex`
+  - codex home: `~/.codex` (기본값)
 
 ## Environment Variables
 
@@ -268,6 +268,7 @@ jgo-first-run-checklist
     - `OPENAI_BASE_URL` is optional (default: `https://api.openai.com/v1`)
     - To use OpenWebUI/LiteLLM endpoint, set `OPENAI_BASE_URL` explicitly
 - Optional:
+  - `CODEX_HOME` (default in image: `/home/jgo/.codex`)
   - `CODEX_BIN` (default: `codex`)
   - `JGO_LISTEN_ADDR` (default: `:8080`)
   - `JGO_OPTIMIZE_PROMPT` (default: `false`)

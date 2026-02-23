@@ -77,6 +77,7 @@ RUN arch="$(dpkg --print-architecture)" && \
     rm -rf /tmp/aws /tmp/awscliv2.zip
 
 ENV USERNAME=jgo
+ENV CODEX_HOME=/home/jgo/.codex
 RUN useradd -m -s /bin/bash "${USERNAME}" && \
     usermod -aG sudo "${USERNAME}" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
