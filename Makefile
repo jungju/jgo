@@ -9,7 +9,7 @@ PROMPT_OPTIMIZE ?= false
 SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
 SSH_KEY_COMMENT ?= jgo-auto
 
-.PHONY: docker-push push serve run-full ssh-key
+.PHONY: docker-push push serve run-full ssh-key deploy-check
 
 docker-push:
 	docker buildx build \
@@ -40,3 +40,6 @@ ssh-key:
 	  echo "ssh key generated: $(SSH_KEY_PATH)"; \
 	fi
 	@echo "public key path: $(SSH_KEY_PATH).pub"
+
+deploy-check:
+	@bash scripts/deploy-check-verify.sh
