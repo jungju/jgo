@@ -22,7 +22,7 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
   - self-growth loop dry-run: `make ghost-grow`
   - autonomous dev loop scaffold: `make autonomous-loop PROMPT="task text"`
-- Chat monitor site (MVP):
+- Web Tetris static site:
   - `monitor/index.html`, `monitor/styles.css`, `monitor/app.js`
   - GitHub Pages deploy workflow: `.github/workflows/pages-chat-monitor.yml`
 
@@ -148,18 +148,17 @@ make autonomous-loop PROMPT="owner/repo 에서 최소 변경으로 기능 구현
 make autonomous-loop EXECUTE=true PROMPT="owner/repo 작업 지시" OWNER=<owner> REPO=<repo> TOPIC=<topic>
 ```
 
-## Autonomous Dev Live Monitor Site (`chat.okgo.click`)
+## Web Tetris Static Site (`chat.okgo.click`)
 
 목적:
-- 로그인 없이 접속 가능한 관제실형 모니터링 채팅 MVP
-- 좌측 이벤트 스트림 + 우측 요약 패널
-- 하단 고정 입력창 + 세션별 로컬 저장(localStorage)
-- OpenAI-compatible `/v1/chat/completions` 엔드포인트와 바로 연동
+- 로그인 없이 접속 가능한 브라우저 테트리스 게임
+- 단일 페이지(보드/점수/라인/레벨/다음 블록/컨트롤)
+- 키보드 + 모바일 버튼 입력 지원
 
 레포 구조:
-- `monitor/index.html`: UI 레이아웃
-- `monitor/styles.css`: 반응형 관제실 스타일
-- `monitor/app.js`: 세션 저장/응답 요청/템플릿 강제
+- `monitor/index.html`: 게임 UI 레이아웃
+- `monitor/styles.css`: 반응형 게임 스타일
+- `monitor/app.js`: 테트리스 게임 로직
 - `monitor/CNAME`: `chat.okgo.click`
 - `monitor/.nojekyll`: 정적 파일 처리
 - `.github/workflows/pages-chat-monitor.yml`: GitHub Pages 자동 배포
@@ -173,10 +172,10 @@ node -e 'const http=require("http"),fs=require("fs"),path=require("path");const 
 ```
 
 사용 방법:
-1. 우측 상단 `Settings`에서 Endpoint URL(예: `https://<host>/v1/chat/completions`) 입력
-2. 필요 시 API Key/Model 입력 후 Save
-3. 하단 입력창으로 커밋 로그/PR 상태/테스트/배포 로그를 전송
-4. 응답은 고정 포맷(상태 요약/이상 징후/구조 분석/개선/Top3 행동/고급 분석)으로 유지
+1. `Start`를 눌러 게임을 시작
+2. `← → ↑ ↓`와 `Space`로 조작
+3. `Pause` 또는 `P`, `Restart` 또는 `R`로 상태 제어
+4. 모바일에서는 하단 버튼으로 이동/회전/드롭 조작
 
 배포 (GitHub Pages):
 1. GitHub 저장소 `Settings -> Pages`에서 Source를 `GitHub Actions`로 설정

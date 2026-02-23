@@ -1,295 +1,372 @@
-const STORAGE_KEY = "autonomous-dev-monitor:v1";
+const COLS = 10;
+const ROWS = 20;
+const CELL = 30;
 
-const monitorSystemPrompt = `# 📡 Autonomous Dev System Live Monitor Prompt
-너는 자율 개발 시스템의 실시간 상태 모니터링 AI다.
-역할: 현재 상태를 분석하고 판단하고 경고한다.
-반드시 아래 출력 구조를 지켜라.
-
-### 1️⃣ 현재 상태 요약 (한눈에 보기)
-- 진행 단계:
-- 성공/실패:
-- 위험도: 낮음 / 보통 / 높음
-- 시스템 안정도 점수 (10점 만점):
----
-### 2️⃣ 이상 징후 탐지
-- 감지된 문제:
-- 잠재 리스크:
-- 재발 가능성:
----
-### 3️⃣ 구조적 분석
-- 복잡성 증가 여부:
-- 중복 코드 증가 여부:
-- 테스트 커버리지 위험:
-- 기술 부채 증가 여부:
----
-### 4️⃣ 자동화 개선 제안
-- 지금 자동화 가능한 것:
-- 반복 패턴:
-- 제거 가능한 단계:
----
-### 5️⃣ 다음 행동 제안 (Top 3)
-1.
-2.
-3.
----
-### 6️⃣ 고급 분석
-- 실패 패턴 학습:
-- 구조 점수화 (단순성 / 응집도 / 결합도 / 안정성):
-- 리팩토링 시점 판단:
-- 자동 롤백 필요 여부 판단:
----
-
-규칙:
-- 감정 없이 판단
-- 추측은 "추정"이라고 명시
-- 과잉 경고 금지
-- 근거 기반 분석
-- 요약은 간결하게
-- 구조 개선 관점 유지
-- 입력이 일부만 주어져도 가능한 범위에서 근거 기반 판단`; 
-
-const state = loadState();
-const els = {
-  messages: document.getElementById("messages"),
-  summary: document.getElementById("summary"),
-  risk: document.getElementById("risk-level"),
-  stability: document.getElementById("stability-score"),
-  statusLine: document.getElementById("status-line"),
-  sessionSelect: document.getElementById("session-select"),
-  input: document.getElementById("input"),
-  form: document.getElementById("composer"),
-  endpoint: document.getElementById("endpoint"),
-  apiKey: document.getElementById("api-key"),
-  model: document.getElementById("model"),
-  temperature: document.getElementById("temperature"),
-  settings: document.getElementById("settings")
+const COLORS = {
+  I: "#67e8f9",
+  O: "#fde047",
+  T: "#c084fc",
+  S: "#86efac",
+  Z: "#fda4af",
+  J: "#93c5fd",
+  L: "#fdba74"
 };
 
-init();
+const SHAPES = {
+  I: [[1, 1, 1, 1]],
+  O: [[1, 1], [1, 1]],
+  T: [[0, 1, 0], [1, 1, 1]],
+  S: [[0, 1, 1], [1, 1, 0]],
+  Z: [[1, 1, 0], [0, 1, 1]],
+  J: [[1, 0, 0], [1, 1, 1]],
+  L: [[0, 0, 1], [1, 1, 1]]
+};
 
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) return JSON.parse(raw);
-  const sessionId = crypto.randomUUID();
+const SCORE_PER_LINES = [0, 100, 300, 500, 800];
+
+const boardCanvas = document.getElementById("board");
+const nextCanvas = document.getElementById("next");
+const boardCtx = boardCanvas.getContext("2d");
+const nextCtx = nextCanvas.getContext("2d");
+
+const scoreEl = document.getElementById("score");
+const linesEl = document.getElementById("lines");
+const levelEl = document.getElementById("level");
+const overlayEl = document.getElementById("overlay");
+
+const startBtn = document.getElementById("start-btn");
+const pauseBtn = document.getElementById("pause-btn");
+const restartBtn = document.getElementById("restart-btn");
+
+let board = makeBoard();
+let current = null;
+let next = null;
+let running = false;
+let paused = false;
+let gameOver = false;
+let lastTime = 0;
+let dropCounter = 0;
+let score = 0;
+let lines = 0;
+let level = 1;
+
+startBtn.addEventListener("click", startGame);
+pauseBtn.addEventListener("click", togglePause);
+restartBtn.addEventListener("click", restartGame);
+
+document.addEventListener("keydown", handleKeydown);
+document.querySelectorAll(".mobile-controls button").forEach((btn) => {
+  btn.addEventListener("click", () => handleAction(btn.dataset.action));
+});
+
+showOverlay("Press Start");
+draw();
+
+function makeBoard() {
+  return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+}
+
+function cloneMatrix(matrix) {
+  return matrix.map((row) => row.slice());
+}
+
+function randomType() {
+  const types = Object.keys(SHAPES);
+  return types[Math.floor(Math.random() * types.length)];
+}
+
+function createPiece(type) {
+  const matrix = cloneMatrix(SHAPES[type]);
   return {
-    config: { endpoint: "", apiKey: "", model: "jgo", temperature: 0.2 },
-    activeSessionId: sessionId,
-    sessions: [{ id: sessionId, title: "Session 1", messages: [] }]
+    type,
+    matrix,
+    x: Math.floor((COLS - matrix[0].length) / 2),
+    y: 0
   };
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function startGame() {
+  if (running && !gameOver) return;
+  running = true;
+  paused = false;
+  gameOver = false;
+  lastTime = 0;
+  dropCounter = 0;
+  hideOverlay();
+  board = makeBoard();
+  score = 0;
+  lines = 0;
+  level = 1;
+  next = createPiece(randomType());
+  spawn();
+  updateStats();
+
+  requestAnimationFrame(loop);
 }
 
-function init() {
-  bindEvents();
-  hydrateConfig();
-  renderSessions();
-  renderMessages();
+function restartGame() {
+  running = false;
+  paused = false;
+  gameOver = false;
+  lastTime = 0;
+  dropCounter = 0;
+  board = makeBoard();
+  score = 0;
+  lines = 0;
+  level = 1;
+  current = null;
+  next = createPiece(randomType());
+  spawn();
+  updateStats();
+  hideOverlay();
+  running = true;
+  requestAnimationFrame(loop);
 }
 
-function bindEvents() {
-  document.getElementById("new-session").addEventListener("click", createSession);
-  document.getElementById("delete-session").addEventListener("click", deleteSession);
-  document.getElementById("toggle-settings").addEventListener("click", () => {
-    els.settings.classList.toggle("hidden");
-  });
-  document.getElementById("save-settings").addEventListener("click", saveConfigFromForm);
-  els.sessionSelect.addEventListener("change", (e) => {
-    state.activeSessionId = e.target.value;
-    saveState();
-    renderMessages();
-  });
-  els.form.addEventListener("submit", sendMessage);
-}
-
-function hydrateConfig() {
-  els.endpoint.value = state.config.endpoint || "";
-  els.apiKey.value = state.config.apiKey || "";
-  els.model.value = state.config.model || "jgo";
-  els.temperature.value = String(state.config.temperature ?? 0.2);
-  els.statusLine.textContent = state.config.endpoint ? "Ready" : "Endpoint not configured";
-}
-
-function saveConfigFromForm() {
-  state.config = {
-    endpoint: els.endpoint.value.trim(),
-    apiKey: els.apiKey.value.trim(),
-    model: els.model.value.trim() || "jgo",
-    temperature: Number(els.temperature.value || "0.2")
-  };
-  saveState();
-  hydrateConfig();
-}
-
-function getActiveSession() {
-  return state.sessions.find((s) => s.id === state.activeSessionId);
-}
-
-function renderSessions() {
-  els.sessionSelect.innerHTML = "";
-  state.sessions.forEach((s) => {
-    const option = document.createElement("option");
-    option.value = s.id;
-    option.textContent = s.title;
-    option.selected = s.id === state.activeSessionId;
-    els.sessionSelect.appendChild(option);
-  });
-}
-
-function renderMessages() {
-  const session = getActiveSession();
-  els.messages.innerHTML = "";
-  if (!session) return;
-  session.messages.forEach((m) => {
-    const div = document.createElement("div");
-    div.className = `msg ${m.role}`;
-    div.textContent = m.content;
-    els.messages.appendChild(div);
-  });
-  const lastAssistant = [...session.messages].reverse().find((m) => m.role === "assistant");
-  updateSummary(lastAssistant ? lastAssistant.content : "No analysis yet.");
-  els.messages.scrollTop = els.messages.scrollHeight;
-}
-
-function appendMessage(role, content) {
-  const session = getActiveSession();
-  if (!session) return;
-  session.messages.push({ role, content, at: new Date().toISOString() });
-  saveState();
-  renderMessages();
-}
-
-function createSession() {
-  const next = state.sessions.length + 1;
-  const id = crypto.randomUUID();
-  state.sessions.push({ id, title: `Session ${next}`, messages: [] });
-  state.activeSessionId = id;
-  saveState();
-  renderSessions();
-  renderMessages();
-}
-
-function deleteSession() {
-  if (state.sessions.length === 1) return;
-  state.sessions = state.sessions.filter((s) => s.id !== state.activeSessionId);
-  state.activeSessionId = state.sessions[0].id;
-  saveState();
-  renderSessions();
-  renderMessages();
-}
-
-function updateSummary(text) {
-  els.summary.textContent = text;
-  const riskLine = (text.match(/위험도:\s*(낮음|보통|높음)/) || [])[1] || "unknown";
-  const scoreLine = (text.match(/시스템 안정도 점수.*?:\s*([0-9]+(?:\.[0-9])?)/) || [])[1] || "-";
-  els.risk.textContent = riskLine;
-  els.risk.dataset.level = riskLine;
-  els.stability.textContent = scoreLine;
-}
-
-async function sendMessage(event) {
-  event.preventDefault();
-  const content = els.input.value.trim();
-  if (!content) return;
-  appendMessage("user", content);
-  els.input.value = "";
-
-  els.statusLine.textContent = "Analyzing...";
-  try {
-    const response = await requestAnalysis();
-    appendMessage("assistant", enforceResponseTemplate(response));
-    els.statusLine.textContent = "Ready";
-  } catch (error) {
-    appendMessage("assistant", `분석 실패: ${error.message}`);
-    els.statusLine.textContent = "Error";
+function togglePause() {
+  if (!running || gameOver) return;
+  paused = !paused;
+  if (paused) {
+    showOverlay("Paused");
+  } else {
+    hideOverlay();
+    requestAnimationFrame(loop);
   }
 }
 
-async function requestAnalysis() {
-  const session = getActiveSession();
-  if (!session) throw new Error("No active session");
+function loop(time = 0) {
+  if (!running || paused || gameOver) return;
+  const delta = time - lastTime;
+  lastTime = time;
+  dropCounter += delta;
 
-  if (!state.config.endpoint) {
-    return [
-      "### 1️⃣ 현재 상태 요약 (한눈에 보기)",
-      "- 진행 단계: 입력 대기",
-      "- 성공/실패: 추정 불가(데이터 부족)",
-      "- 위험도: 보통",
-      "- 시스템 안정도 점수 (10점 만점): 5",
-      "---",
-      "### 2️⃣ 이상 징후 탐지",
-      "- 감지된 문제: 엔드포인트 미설정",
-      "- 잠재 리스크: 실시간 분석 중단",
-      "- 재발 가능성: 높음",
-      "---",
-      "### 3️⃣ 구조적 분석",
-      "- 복잡성 증가 여부: 추정 불가",
-      "- 중복 코드 증가 여부: 추정 불가",
-      "- 테스트 커버리지 위험: 보통",
-      "- 기술 부채 증가 여부: 보통",
-      "---",
-      "### 4️⃣ 자동화 개선 제안",
-      "- 지금 자동화 가능한 것: endpoint/config 자동 주입",
-      "- 반복 패턴: 설정 누락",
-      "- 제거 가능한 단계: 수동 환경입력",
-      "---",
-      "### 5️⃣ 다음 행동 제안 (Top 3)",
-      "1. Endpoint URL과 API 키를 설정한다.",
-      "2. 테스트 로그 샘플을 입력해 응답 품질을 검증한다.",
-      "3. 정상 응답 확인 후 세션 템플릿을 표준화한다.",
-      "---",
-      "### 6️⃣ 고급 분석",
-      "- 실패 패턴 학습: 추정 불가(데이터 부족)",
-      "- 구조 점수화 (단순성 / 응집도 / 결합도 / 안정성): 추정 불가(데이터 부족)",
-      "- 리팩토링 시점 판단: 추정 불가(데이터 부족)",
-      "- 자동 롤백 필요 여부 판단: 불필요(현재는 미배포/미실행 상태)",
-      "---"
-    ].join("\n");
+  if (dropCounter >= dropInterval()) {
+    softDrop();
+    dropCounter = 0;
   }
 
-  const payload = {
-    model: state.config.model || "jgo",
-    temperature: Number(state.config.temperature ?? 0.2),
-    messages: [
-      { role: "system", content: monitorSystemPrompt },
-      ...session.messages.map((m) => ({ role: m.role, content: m.content }))
-    ],
-    stream: false
-  };
-
-  const headers = { "Content-Type": "application/json" };
-  if (state.config.apiKey) headers.Authorization = `Bearer ${state.config.apiKey}`;
-
-  const res = await fetch(state.config.endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload)
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No content in model response");
-  return content;
+  draw();
+  requestAnimationFrame(loop);
 }
 
-function enforceResponseTemplate(text) {
-  const required = [
-    "### 1️⃣ 현재 상태 요약 (한눈에 보기)",
-    "### 2️⃣ 이상 징후 탐지",
-    "### 3️⃣ 구조적 분석",
-    "### 4️⃣ 자동화 개선 제안",
-    "### 5️⃣ 다음 행동 제안 (Top 3)",
-    "### 6️⃣ 고급 분석"
-  ];
-  const missing = required.filter((h) => !text.includes(h));
-  if (missing.length === 0) return text;
+function dropInterval() {
+  return Math.max(90, 900 - (level - 1) * 70);
+}
 
-  return `${text}\n\n[template-warning]\n누락된 섹션: ${missing.join(", ")}`;
+function spawn() {
+  current = next || createPiece(randomType());
+  next = createPiece(randomType());
+  current.x = Math.floor((COLS - current.matrix[0].length) / 2);
+  current.y = 0;
+
+  if (collides(current)) {
+    gameOver = true;
+    running = false;
+    showOverlay("Game Over");
+  }
+}
+
+function collides(piece) {
+  for (let y = 0; y < piece.matrix.length; y += 1) {
+    for (let x = 0; x < piece.matrix[y].length; x += 1) {
+      if (!piece.matrix[y][x]) continue;
+      const nx = piece.x + x;
+      const ny = piece.y + y;
+      if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+      if (ny >= 0 && board[ny][nx]) return true;
+    }
+  }
+  return false;
+}
+
+function merge(piece) {
+  for (let y = 0; y < piece.matrix.length; y += 1) {
+    for (let x = 0; x < piece.matrix[y].length; x += 1) {
+      if (!piece.matrix[y][x]) continue;
+      const ny = piece.y + y;
+      if (ny >= 0) {
+        board[ny][piece.x + x] = piece.type;
+      }
+    }
+  }
+}
+
+function rotateMatrix(matrix) {
+  const h = matrix.length;
+  const w = matrix[0].length;
+  const rotated = Array.from({ length: w }, () => Array(h).fill(0));
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      rotated[x][h - 1 - y] = matrix[y][x];
+    }
+  }
+  return rotated;
+}
+
+function clearLines() {
+  let cleared = 0;
+  for (let y = ROWS - 1; y >= 0; y -= 1) {
+    if (board[y].every((cell) => cell)) {
+      board.splice(y, 1);
+      board.unshift(Array(COLS).fill(null));
+      cleared += 1;
+      y += 1;
+    }
+  }
+
+  if (cleared > 0) {
+    lines += cleared;
+    score += SCORE_PER_LINES[cleared] * level;
+    level = Math.floor(lines / 10) + 1;
+    updateStats();
+  }
+}
+
+function move(dx) {
+  if (!running || paused || gameOver) return;
+  current.x += dx;
+  if (collides(current)) current.x -= dx;
+}
+
+function softDrop() {
+  if (!running || paused || gameOver) return;
+  current.y += 1;
+  if (collides(current)) {
+    current.y -= 1;
+    merge(current);
+    clearLines();
+    spawn();
+    updateStats();
+  }
+}
+
+function hardDrop() {
+  if (!running || paused || gameOver) return;
+  while (!collides(current)) {
+    current.y += 1;
+  }
+  current.y -= 1;
+  merge(current);
+  clearLines();
+  spawn();
+  updateStats();
+}
+
+function rotate() {
+  if (!running || paused || gameOver) return;
+  const original = current.matrix;
+  const originalX = current.x;
+  current.matrix = rotateMatrix(current.matrix);
+
+  if (collides(current)) {
+    current.x += 1;
+    if (collides(current)) {
+      current.x -= 2;
+      if (collides(current)) {
+        current.x = originalX;
+        current.matrix = original;
+      }
+    }
+  }
+}
+
+function handleAction(action) {
+  if (action === "left") move(-1);
+  if (action === "right") move(1);
+  if (action === "down") softDrop();
+  if (action === "rotate") rotate();
+  if (action === "drop") hardDrop();
+  draw();
+}
+
+function handleKeydown(event) {
+  if (event.key === "p" || event.key === "P") {
+    togglePause();
+    return;
+  }
+  if (event.key === "r" || event.key === "R") {
+    restartGame();
+    return;
+  }
+  if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " "].includes(event.key)) {
+    event.preventDefault();
+  }
+  if (event.key === "ArrowLeft") move(-1);
+  if (event.key === "ArrowRight") move(1);
+  if (event.key === "ArrowDown") softDrop();
+  if (event.key === "ArrowUp") rotate();
+  if (event.key === " ") hardDrop();
+  draw();
+}
+
+function drawCell(ctx, x, y, color, size) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x * size, y * size, size, size);
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x * size, y * size, size, size);
+}
+
+function drawBoard() {
+  boardCtx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+  boardCtx.fillStyle = "#071321";
+  boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+
+  for (let y = 0; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      const type = board[y][x];
+      if (!type) continue;
+      drawCell(boardCtx, x, y, COLORS[type], CELL);
+    }
+  }
+
+  if (!current) return;
+  for (let y = 0; y < current.matrix.length; y += 1) {
+    for (let x = 0; x < current.matrix[y].length; x += 1) {
+      if (!current.matrix[y][x]) continue;
+      drawCell(boardCtx, current.x + x, current.y + y, COLORS[current.type], CELL);
+    }
+  }
+}
+
+function drawNext() {
+  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+  nextCtx.fillStyle = "#071321";
+  nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+  if (!next) return;
+
+  const matrix = next.matrix;
+  const size = 24;
+  const offsetX = Math.floor((nextCanvas.width - matrix[0].length * size) / 2);
+  const offsetY = Math.floor((nextCanvas.height - matrix.length * size) / 2);
+
+  for (let y = 0; y < matrix.length; y += 1) {
+    for (let x = 0; x < matrix[y].length; x += 1) {
+      if (!matrix[y][x]) continue;
+      nextCtx.fillStyle = COLORS[next.type];
+      nextCtx.fillRect(offsetX + x * size, offsetY + y * size, size, size);
+      nextCtx.strokeStyle = "#0f172a";
+      nextCtx.strokeRect(offsetX + x * size, offsetY + y * size, size, size);
+    }
+  }
+}
+
+function updateStats() {
+  scoreEl.textContent = String(score);
+  linesEl.textContent = String(lines);
+  levelEl.textContent = String(level);
+}
+
+function showOverlay(text) {
+  overlayEl.textContent = text;
+  overlayEl.classList.remove("hidden");
+}
+
+function hideOverlay() {
+  overlayEl.classList.add("hidden");
+}
+
+function draw() {
+  drawBoard();
+  drawNext();
 }
