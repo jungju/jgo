@@ -95,10 +95,9 @@ COPY docker-entrypoint.sh /usr/local/bin/jgo
 COPY scripts/jgo-first-run-checklist.sh /usr/local/bin/jgo-first-run-checklist
 RUN chmod +x /usr/local/bin/jgo /usr/local/bin/jgo-first-run-checklist
 
-RUN install -d -m 700 /root/.ssh
-COPY id_ed25519 /root/.ssh/id_ed25519
-COPY id_ed25519.pub /root/.ssh/id_ed25519.pub
-RUN chmod 600 /root/.ssh/id_ed25519 && \
+RUN install -d -m 700 /root/.ssh && \
+    ssh-keygen -q -t ed25519 -N "" -C "jgo@container-build" -f /root/.ssh/id_ed25519 && \
+    chmod 600 /root/.ssh/id_ed25519 && \
     chmod 644 /root/.ssh/id_ed25519.pub
 
 RUN mkdir -p /var/run/sshd
