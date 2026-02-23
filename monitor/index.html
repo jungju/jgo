@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Autonomous Dev Monitor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Autonomous Dev Control Room</h1>
+      <p id="status-line">Disconnected</p>
+    </div>
+    <div class="session-tools">
+      <select id="session-select" aria-label="session"></select>
+      <button id="new-session" type="button">New Session</button>
+      <button id="delete-session" type="button">Delete</button>
+      <button id="toggle-settings" type="button">Settings</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="events-panel">
+      <h2>Event Stream</h2>
+      <div id="messages" class="messages" aria-live="polite"></div>
+    </section>
+
+    <aside class="summary-panel">
+      <h2>Live Summary</h2>
+      <div id="summary" class="summary-card">
+        <p>No analysis yet.</p>
+      </div>
+      <div class="quick-metrics">
+        <p><strong>Risk:</strong> <span id="risk-level">unknown</span></p>
+        <p><strong>Stability:</strong> <span id="stability-score">-</span></p>
+      </div>
+    </aside>
+  </main>
+
+  <section id="settings" class="settings hidden" aria-label="settings">
+    <label>Endpoint URL
+      <input id="endpoint" placeholder="https://your-endpoint/v1/chat/completions" />
+    </label>
+    <label>API Key
+      <input id="api-key" type="password" placeholder="sk-..." />
+    </label>
+    <label>Model
+      <input id="model" placeholder="jgo" />
+    </label>
+    <label>Temperature
+      <input id="temperature" type="number" min="0" max="1" step="0.1" value="0.2" />
+    </label>
+    <button id="save-settings" type="button">Save</button>
+  </section>
+
+  <footer class="composer-wrap">
+    <form id="composer" class="composer">
+      <textarea id="input" rows="3" placeholder="커밋 로그/PR 상태/테스트 결과/배포 로그 등을 입력하세요." required></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -19,7 +19,12 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - Container images:
   - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
 - Tooling:
-  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key` 제공.
+- `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
+  - self-growth loop dry-run: `make ghost-grow`
+  - autonomous dev loop scaffold: `make autonomous-loop PROMPT="task text"`
+- Chat monitor site (MVP):
+  - `monitor/index.html`, `monitor/styles.css`, `monitor/app.js`
+  - GitHub Pages deploy workflow: `.github/workflows/pages-chat-monitor.yml`
 
 ## 서비스 구조 요약
 
@@ -123,7 +128,61 @@ make run-full PROMPT="접근 가능한 Repo 전부 나열해줘"
 
 # 5) Kubernetes + 도메인(Ingress) 작업 요청
 make run-full PROMPT="k8s에 xxx.okgo.click으로 nginx 띄어줘"
+
+# 6) 배포 사전 체크 + 배포 + 사후 검증을 한 번에 실행
+make deploy-check
+
+# 6-1) 체크만 수행(배포 생략)
+bash scripts/deploy-check-verify.sh --check-only
+
+# 7) self-growth loop (repo 생성/개발 시작/공개 자동화 시뮬레이션)
+make ghost-grow
+
+# 7-1) 실제 실행 (로컬 생성 + gh 원격 생성/푸시)
+bash scripts/ghost-self-growth-loop.sh --execute --owner <owner> --repo <repo>
+
+# 8) autonomous dev loop scaffold (run artifacts + checklist + retrospective)
+make autonomous-loop PROMPT="owner/repo 에서 최소 변경으로 기능 구현, 테스트, 커밋, 푸시"
+
+# 8-1) execute mode (repo sync + branch + verification + push attempt)
+make autonomous-loop EXECUTE=true PROMPT="owner/repo 작업 지시" OWNER=<owner> REPO=<repo> TOPIC=<topic>
 ```
+
+## Autonomous Dev Live Monitor Site (`chat.okgo.click`)
+
+목적:
+- 로그인 없이 접속 가능한 관제실형 모니터링 채팅 MVP
+- 좌측 이벤트 스트림 + 우측 요약 패널
+- 하단 고정 입력창 + 세션별 로컬 저장(localStorage)
+- OpenAI-compatible `/v1/chat/completions` 엔드포인트와 바로 연동
+
+레포 구조:
+- `monitor/index.html`: UI 레이아웃
+- `monitor/styles.css`: 반응형 관제실 스타일
+- `monitor/app.js`: 세션 저장/응답 요청/템플릿 강제
+- `monitor/CNAME`: `chat.okgo.click`
+- `monitor/.nojekyll`: 정적 파일 처리
+- `.github/workflows/pages-chat-monitor.yml`: GitHub Pages 자동 배포
+
+로컬 실행:
+
+```bash
+cd monitor
+node -e 'const http=require("http"),fs=require("fs"),path=require("path");const root=process.cwd();http.createServer((req,res)=>{const p=req.url==="/"?"index.html":req.url.slice(1);fs.readFile(path.join(root,p),(e,d)=>{if(e){res.statusCode=404;return res.end("not found");}res.end(d);});}).listen(4173)'
+# open http://localhost:4173
+```
+
+사용 방법:
+1. 우측 상단 `Settings`에서 Endpoint URL(예: `https://<host>/v1/chat/completions`) 입력
+2. 필요 시 API Key/Model 입력 후 Save
+3. 하단 입력창으로 커밋 로그/PR 상태/테스트/배포 로그를 전송
+4. 응답은 고정 포맷(상태 요약/이상 징후/구조 분석/개선/Top3 행동/고급 분석)으로 유지
+
+배포 (GitHub Pages):
+1. GitHub 저장소 `Settings -> Pages`에서 Source를 `GitHub Actions`로 설정
+2. `main` 브랜치에 `monitor/**` 변경이 push되면 `Deploy Chat Monitor to GitHub Pages` 워크플로우 실행
+3. DNS에서 `chat.okgo.click`을 GitHub Pages 도메인으로 연결
+4. 배포 후 `https://chat.okgo.click` 접속 확인
 
 ## Request Lifecycle (API -> Codex)
 
