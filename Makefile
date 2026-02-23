@@ -9,7 +9,7 @@ PROMPT_OPTIMIZE ?= false
 SSH_KEY_PATH ?= .jgo-cache/ssh/id_ed25519
 SSH_KEY_COMMENT ?= jgo-auto
 
-.PHONY: docker-push push serve run-full ssh-key deploy-check
+.PHONY: docker-push push serve run-full ssh-key deploy-check ghost-grow
 
 docker-push:
 	docker buildx build \
@@ -43,3 +43,6 @@ ssh-key:
 
 deploy-check:
 	@bash scripts/deploy-check-verify.sh
+
+ghost-grow:
+	@bash scripts/ghost-self-growth-loop.sh --dry-run

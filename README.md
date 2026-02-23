@@ -19,7 +19,8 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - Container images:
   - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
 - Tooling:
-  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
+- `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
+  - self-growth loop dry-run: `make ghost-grow`
 
 ## 서비스 구조 요약
 
@@ -129,6 +130,12 @@ make deploy-check
 
 # 6-1) 체크만 수행(배포 생략)
 bash scripts/deploy-check-verify.sh --check-only
+
+# 7) self-growth loop (repo 생성/개발 시작/공개 자동화 시뮬레이션)
+make ghost-grow
+
+# 7-1) 실제 실행 (로컬 생성 + gh 원격 생성/푸시)
+bash scripts/ghost-self-growth-loop.sh --execute --owner <owner> --repo <repo>
 ```
 
 ## Request Lifecycle (API -> Codex)
