@@ -3,44 +3,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Autonomous Dev Monitor</title>
+  <title>jgo 작업 관제판</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <h1>Autonomous Dev Control Room</h1>
+      <h1>jgo 작업 관제판</h1>
       <p id="status-line">Disconnected</p>
     </div>
     <div class="session-tools">
       <select id="session-select" aria-label="session"></select>
-      <button id="new-session" type="button">New Session</button>
-      <button id="delete-session" type="button">Delete</button>
+      <button id="new-session" type="button">세션 추가</button>
+      <button id="delete-session" type="button">세션 삭제</button>
+      <button id="refresh-runs" type="button">새로고침</button>
       <button id="toggle-settings" type="button">Settings</button>
     </div>
   </header>
 
   <main class="layout">
     <section class="events-panel">
-      <h2>Event Stream</h2>
-      <div id="messages" class="messages" aria-live="polite"></div>
+      <h2>현재 만드는 과정</h2>
+      <div id="process" class="summary-card process-feed" aria-live="polite"></div>
+
+      <h2>실행 이력</h2>
+      <div id="run-log" class="run-log"></div>
     </section>
 
-    <aside class="summary-panel">
-      <h2>Live Summary</h2>
+    <section class="summary-panel">
+      <h2>명령/응답</h2>
+      <div id="messages" class="messages" aria-live="polite"></div>
+
       <div id="summary" class="summary-card">
-        <p>No analysis yet.</p>
+        <p>최신 응답을 기반으로 상태가 요약됩니다.</p>
       </div>
+
       <div class="quick-metrics">
         <p><strong>Risk:</strong> <span id="risk-level">unknown</span></p>
         <p><strong>Stability:</strong> <span id="stability-score">-</span></p>
       </div>
-    </aside>
+    </section>
   </main>
 
   <section id="settings" class="settings hidden" aria-label="settings">
-    <label>Endpoint URL
-      <input id="endpoint" placeholder="https://your-endpoint/v1/chat/completions" />
+    <label>Endpoint
+      <input id="endpoint" placeholder="https://host/v1/chat/completions" />
     </label>
     <label>API Key
       <input id="api-key" type="password" placeholder="sk-..." />
@@ -56,7 +63,7 @@
 
   <footer class="composer-wrap">
     <form id="composer" class="composer">
-      <textarea id="input" rows="3" placeholder="커밋 로그/PR 상태/테스트 결과/배포 로그 등을 입력하세요." required></textarea>
+      <textarea id="input" rows="3" placeholder="명령어/개발 지시를 입력하세요." required></textarea>
       <button id="send" type="submit">Send</button>
     </form>
   </footer>

@@ -90,6 +90,7 @@ RUN cd /opt/jgo && \
     sudo -u "${USERNAME}" env GOCACHE=/tmp/go-build GOMODCACHE="/home/${USERNAME}/.cache/go-mod" /usr/local/go/bin/go mod download
 
 COPY main.go /opt/jgo/main.go
+COPY monitor /opt/jgo/monitor
 COPY homefiles /opt/jgo/homefiles
 COPY docker-entrypoint.sh /usr/local/bin/jgo
 COPY scripts/jgo-first-run-checklist.sh /usr/local/bin/jgo-first-run-checklist

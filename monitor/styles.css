@@ -15,7 +15,7 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", "Noto Sans KR", sans-serif;
+  font-family: "Noto Sans KR", "Inter", sans-serif;
   color: var(--text);
   background: radial-gradient(circle at 20% 0%, #133049 0%, var(--bg) 50%);
   min-height: 100vh;
@@ -57,20 +57,27 @@ body {
 .session-tools button,
 .session-tools select,
 #save-settings,
-#send {
+#send,
+.composer {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.session-tools button,
+.session-tools select,
+#save-settings,
+#send {
   padding: 8px 10px;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1.1fr 1fr;
   gap: 12px;
   padding: 12px;
-  padding-bottom: 110px;
+  padding-bottom: 112px;
 }
 
 .events-panel,
@@ -88,11 +95,14 @@ h2 {
   color: var(--accent);
 }
 
-.messages {
+.messages,
+.summary-card,
+.run-log,
+.process-feed {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100vh - 260px);
+  max-height: calc(100vh - 300px);
   overflow-y: auto;
   padding-right: 6px;
 }
@@ -115,7 +125,7 @@ h2 {
 }
 
 .summary-card {
-  min-height: 180px;
+  min-height: 160px;
   white-space: pre-wrap;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -187,6 +197,54 @@ h2 {
   padding: 10px;
 }
 
+.run-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  background: var(--panel);
+}
+
+.run-row.completed {
+  border-color: var(--ok);
+}
+
+.run-row.failed {
+  border-color: var(--high);
+}
+
+.run-row.blocked {
+  border-color: var(--warn);
+}
+
+.run-left {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.run-meta {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.run-instruction,
+.run-result,
+.process-item {
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.process-feed {
+  max-height: 180px;
+}
+
+.process-item {
+  color: #c6d8e7;
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
@@ -196,7 +254,8 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .messages {
+  .messages,
+  .run-log {
     max-height: 40vh;
   }
 }
