@@ -31,11 +31,24 @@ to_abs_path() {
 cache_root="$(to_abs_path ".jgo-cache")"
 gocache_path="${GOCACHE:-${cache_root}/go-build}"
 gomodcache_path="${GOMODCACHE:-${cache_root}/go-mod}"
-codex_home_path="${CODEX_HOME:-${cache_root}/codex}"
+home_dir="$(to_abs_path "${HOME:-/home/jgo}")"
+legacy_codex_home="${home_dir}/.jgo-cache/codex"
+default_codex_home="${home_dir}/.codex"
+
+if [ -z "${CODEX_HOME:-}" ]; then
+  if [ -f "${legacy_codex_home}/auth.json" ] && [ ! -f "${default_codex_home}/auth.json" ]; then
+    codex_home_path="${legacy_codex_home}"
+  else
+    codex_home_path="${default_codex_home}"
+  fi
+else
+  codex_home_path="${CODEX_HOME}"
+fi
 
 export GOCACHE="$(to_abs_path "${gocache_path}")"
 export GOMODCACHE="$(to_abs_path "${gomodcache_path}")"
 export CODEX_HOME="$(to_abs_path "${codex_home_path}")"
+export XDG_CONFIG_HOME="${home_dir}/.config"
 main_file="${JGO_MAIN_FILE:-/opt/jgo/main.go}"
 
 mkdir -p "${GOCACHE}" "${GOMODCACHE}" "${CODEX_HOME}"

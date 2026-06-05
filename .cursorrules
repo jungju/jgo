@@ -1,0 +1,46 @@
+{
+  "rules": [
+    {
+      "description": "jgo project rules for AI code assistants",
+      "context": "jgo is an OpenAI-compatible resident Go server that delegates task execution to codex CLI",
+      "rules": [
+        "SPEC/SPEC.md is FROZEN — do not change behavior without explicit user approval",
+        "All logic stays in main.go — do not split into packages or create new Go files",
+        "Go standard library only — no external dependencies (no go get)",
+        "jgo never directly calls git, gh, aws, kubectl for user tasks — delegate to codex exec only",
+        "No force-push, amend, or reset — use safe Git with Conventional Commits",
+        "Prompt optimization is default OFF — do not auto-enable",
+        "Successful responses must contain raw codex output only — no wrappers or fallback JSON"
+      ]
+    },
+    {
+      "description": "Code style conventions",
+      "rules": [
+        "Error wrapping: fmt.Errorf(\"context: %w\", err)",
+        "HTTP handlers: http.NewServeMux + HandleFunc closures",
+        "JSON responses: use writeJSON and writeOpenAIError helpers",
+        "Every request gets run_id via nextRunID(), set X-JGO-Run-ID header",
+        "Logging: structured stderr via logRunf(ctx, ...)",
+        "Config: loaded from environment via loadConfigFromEnv()"
+      ]
+    },
+    {
+      "description": "Files to read first",
+      "rules": [
+        "Read SPEC/SPEC.md before making any behavioral changes",
+        "Read SPEC/DEVELOPMENT_RULES.md for development constraints",
+        "Read main.go to understand current implementation"
+      ]
+    },
+    {
+      "description": "Architecture",
+      "rules": [
+        "Subcommands: serve (API server) and exec (CLI direct execution)",
+        "API endpoints: /healthz, /v1/models, /v1/chat/completions, /api/runs",
+        "Execution transport: local (default) or ssh",
+        "Model ID is fixed to jgo",
+        "Kubernetes defaults: namespace=ai, workload=jgo, port=8080"
+      ]
+    }
+  ]
+}

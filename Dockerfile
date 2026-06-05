@@ -7,7 +7,6 @@ ARG GH_VERSION=2.86.0
 ARG KUBECTL_VERSION=v1.34.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssh-server \
     openssh-client \
     sudo \
     ca-certificates \
@@ -78,6 +77,7 @@ RUN arch="$(dpkg --print-architecture)" && \
     rm -rf /tmp/aws /tmp/awscliv2.zip
 
 ENV USERNAME=jgo
+ENV CODEX_HOME=/home/jgo/.codex
 RUN useradd -m -s /bin/bash "${USERNAME}" && \
     usermod -aG sudo "${USERNAME}" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
@@ -90,34 +90,11 @@ RUN cd /opt/jgo && \
     sudo -u "${USERNAME}" env GOCACHE=/tmp/go-build GOMODCACHE="/home/${USERNAME}/.cache/go-mod" /usr/local/go/bin/go mod download
 
 COPY main.go /opt/jgo/main.go
+COPY monitor /opt/jgo/monitor
 COPY homefiles /opt/jgo/homefiles
 COPY docker-entrypoint.sh /usr/local/bin/jgo
 COPY scripts/jgo-first-run-checklist.sh /usr/local/bin/jgo-first-run-checklist
 RUN chmod +x /usr/local/bin/jgo /usr/local/bin/jgo-first-run-checklist
-
-RUN install -d -m 700 /root/.ssh
-COPY id_ed25519 /root/.ssh/id_ed25519
-COPY id_ed25519.pub /root/.ssh/id_ed25519.pub
-RUN chmod 600 /root/.ssh/id_ed25519 && \
-    chmod 644 /root/.ssh/id_ed25519.pub
-
-RUN mkdir -p /var/run/sshd
-RUN sed -i 's/#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config && \
-    sed -i 's/#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
-    sed -i 's/#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
-    sed -i 's@#\?AuthorizedKeysFile .*@AuthorizedKeysFile .ssh/authorized_keys@' /etc/ssh/sshd_config && \
-    sed -i 's/#\?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config && \
-    sed -i 's/#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config || true && \
-    { \
-      echo ''; \
-      echo 'AllowTcpForwarding yes'; \
-      echo 'PermitTunnel yes'; \
-      echo 'X11Forwarding no'; \
-      echo 'ClientAliveInterval 60'; \
-      echo 'ClientAliveCountMax 3'; \
-      echo 'UseDNS no'; \
-      echo 'PermitUserEnvironment yes'; \
-    } >> /etc/ssh/sshd_config
 
 RUN echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go.sh
 
@@ -125,33 +102,7 @@ RUN cat > /usr/local/bin/entrypoint.sh <<'SH' && chmod +x /usr/local/bin/entrypo
 #!/usr/bin/env bash
 set -euo pipefail
 
-USERNAME="${USERNAME:-jgo}"
-HOME_DIR="/home/${USERNAME}"
-
-if ! id -u "${USERNAME}" >/dev/null 2>&1; then
-  sudo useradd -m -s /bin/bash "${USERNAME}"
-  sudo usermod -aG sudo "${USERNAME}" || true
-  echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/${USERNAME}" >/dev/null
-  sudo chmod 0440 "/etc/sudoers.d/${USERNAME}"
-fi
-
-sudo mkdir -p /var/run/sshd
-
-sudo /usr/sbin/sshd
-
 export JGO_MAIN_FILE="${JGO_MAIN_FILE:-/opt/jgo/main.go}"
-export JGO_SSH_USER="${USERNAME}"
-export JGO_SSH_HOST="localhost"
-export JGO_SSH_PORT="22"
-
-for _ in $(seq 1 40); do
-  if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -p "${JGO_SSH_PORT}" "${JGO_SSH_USER}@${JGO_SSH_HOST}" "exit 0" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.1
-done
-
 exec /usr/local/bin/jgo "$@"
 SH
 
@@ -160,5 +111,5 @@ WORKDIR /home/jgo/
 ENV JGO_LISTEN_ADDR=:8080
 ENV GOMODCACHE=/home/jgo/.cache/go-mod
 
-EXPOSE 22 8080
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

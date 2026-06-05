@@ -1,9 +1,9 @@
 jgo
 jgo-arm64
-rgo
-rgo-arm64
 .cache/
 .tools/
 .env
 .kubeconfig
 .jgo-cache/
+id_ed25519
+id_ed25519.pub

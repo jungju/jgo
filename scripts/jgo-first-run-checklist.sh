@@ -14,6 +14,8 @@ target_home="${TARGET_HOME:-/home/jgo}"
 target_user="${TARGET_USER:-jgo}"
 target_group="${TARGET_GROUP:-${target_user}}"
 marker_file="${MARKER_FILE:-${target_home}/.jgo-homefiles-initialized}"
+exec_transport_raw="${JGO_EXEC_TRANSPORT:-local}"
+exec_transport="$(echo "${exec_transport_raw}" | tr '[:upper:]' '[:lower:]' | xargs)"
 
 ssh_dir="${target_home}/.ssh"
 ssh_private_key="${ssh_dir}/id_ed25519"
@@ -33,6 +35,10 @@ ok() {
 fail() {
 	echo "[FAIL] $*"
 	fail_count=$((fail_count + 1))
+}
+
+is_ssh_transport() {
+	[ "${exec_transport}" = "ssh" ]
 }
 
 ensure_sandbox_workspace_write_config() {
@@ -133,6 +139,11 @@ ensure_ssh_identity_and_authorized_keys() {
 	chmod 600 "${ssh_private_key}"
 	chmod 644 "${ssh_public_key}"
 
+	if ! is_ssh_transport; then
+		ok "skip authorized_keys setup (JGO_EXEC_TRANSPORT=${exec_transport})"
+		return
+	fi
+
 	touch "${ssh_authorized_keys_file}"
 	chmod 600 "${ssh_authorized_keys_file}"
 	append_public_key_once "${ssh_public_key}" "${ssh_authorized_keys_file}"
@@ -210,6 +221,7 @@ check_kubectl_connectivity() {
 }
 
 log "first-run checklist start"
+log "execution transport: ${exec_transport}"
 copy_homefiles_once
 ensure_ssh_identity_and_authorized_keys
 check_codex_login

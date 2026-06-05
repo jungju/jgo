@@ -1,12 +1,12 @@
 # jgo
 
-Authoritative behavior baseline: `SPEC.md` (`FROZEN`).
+Authoritative behavior baseline: `SPEC/SPEC.md` (`FROZEN`).
 
 `jgo` is a resident Go server that exposes an OpenAI-compatible API and runs `codex` CLI prompts to:
 
 1. Receive chat requests through OpenAI-compatible endpoints.
 2. Optionally optimize the user request via upstream OpenAI-compatible API.
-3. Execute the effective prompt through a single `codex exec` call (via SSH target).
+3. Execute the effective prompt through a single `codex exec` call (default: local direct execution, optional SSH target).
 4. Return codex execution response in OpenAI-compatible format.
 
 Primary objective: let Codex perform real work through available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
@@ -17,15 +17,20 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
   - `main.go`: API/CLI 엔트리포인트(`serve`/`exec`)와 자동화 오케스트레이션 전체를 단일 파일로 유지.
   - `docker-entrypoint.sh`: 컨테이너 캐시 경로(`.jgo-cache`)를 준비하고 `go run /opt/jgo/main.go` 실행.
 - Container images:
-  - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`openssh-server`, `codex`, `gh`, `kubectl`, `aws` + `main.go` 실행 포함).
+  - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`codex`, `gh`, `kubectl`, `aws`, `openssh-client` + `main.go` 실행 포함).
 - Tooling:
   - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
+  - self-growth loop dry-run: `make ghost-grow`
+  - autonomous dev loop scaffold: `make autonomous-loop PROMPT="task text"`
+- Chat monitor site (MVP):
+  - `monitor/index.html`, `monitor/styles.css`, `monitor/app.js`
+  - GitHub Pages deploy workflow: `.github/workflows/pages-chat-monitor.yml`
 
 ## 서비스 구조 요약
 
 - `jgo`는 OpenAI 호환 API 서버로 상주한다.
 - 요청이 오면 입력을 해석하고(옵션) 프롬프트를 최적화한 뒤 실행 프롬프트를 확정한다.
-- 실제 실행은 컨테이너 내부 `localhost` SSH 대상에서 `codex exec` 단일 실행으로 위임한다.
+- 실제 실행은 기본적으로 컨테이너 내부에서 `codex exec`를 직접 실행하고, 필요 시에만 SSH 대상으로 위임한다.
 - 핵심 목적은 codex가 환경의 CLI(`gh`, `aws`, `kubectl`, `git` 등)를 활용해 다양한 자동화 작업을 수행하는 것이다.
 
 ## Service Overview
@@ -48,7 +53,10 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 3. Prompt Layer (optional):
    - when enabled, calls upstream OpenAI-compatible API and rewrites instruction for codex execution.
 4. Execution Layer:
-   - runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` via localhost SSH target (default: `jgo@localhost:22` in container) and lets codex use available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
+   - runs `codex exec --full-auto --skip-git-repo-check "<prompt>"` on selected transport:
+   - default: local process execution (`JGO_EXEC_TRANSPORT=local`)
+   - optional: SSH target execution (`JGO_EXEC_TRANSPORT=ssh`)
+   - codex can use available CLIs (`gh`, `aws`, `kubectl`, `git`, etc.).
 5. Observability Layer:
    - every request/run gets `run_id`,
    - API response header includes `X-JGO-Run-ID`,
@@ -95,9 +103,10 @@ I do not permit the human system of hiring for this being.
 - `jgo exec` default `--env-file .env`:
   - if `.env` is missing, command fails
   - pass `--env-file ""` to skip file loading
-- All modes (`serve`/`exec`) validate SSH settings first.
+- All modes (`serve`/`exec`) validate execution transport settings first (`ssh` 선택 시에만 SSH 설정 검증).
 - `Makefile` shortcuts:
   - full run (direct CLI): `make run-full PROMPT="작업 지시"`
+  - transport override: `make run-full EXEC_TRANSPORT=ssh PROMPT="작업 지시"`
 
 Makefile examples:
 
@@ -105,6 +114,7 @@ Makefile examples:
 # 0) jgo CLI 직접 실행 예시
 jgo exec --env-file .env "owner/repo README 업데이트하고 커밋/푸시해줘"
 jgo exec --env-file .env --optimize-prompt "owner/repo README 업데이트하고 커밋/푸시해줘"
+jgo exec --env-file .env --transport ssh "원격 SSH 대상으로 실행해줘"
 
 # 1) 전체 실행 요청 (CLI 직접 실행)
 make run-full PROMPT="owner/repo README 업데이트하고 커밋/푸시"
@@ -129,7 +139,55 @@ make deploy-check
 
 # 6-1) 체크만 수행(배포 생략)
 bash scripts/deploy-check-verify.sh --check-only
+
+# 7) self-growth loop (repo 생성/개발 시작/공개 자동화 시뮬레이션)
+make ghost-grow
+
+# 7-1) 실제 실행 (로컬 생성 + gh 원격 생성/푸시)
+bash scripts/ghost-self-growth-loop.sh --execute --owner <owner> --repo <repo>
+
+# 8) autonomous dev loop scaffold (run artifacts + checklist + retrospective)
+make autonomous-loop PROMPT="owner/repo 에서 최소 변경으로 기능 구현, 테스트, 커밋, 푸시"
+
+# 8-1) execute mode (repo sync + branch + verification + push attempt)
+make autonomous-loop EXECUTE=true PROMPT="owner/repo 작업 지시" OWNER=<owner> REPO=<repo> TOPIC=<topic>
 ```
+
+## Autonomous Dev Live Monitor Site (`chat.okgo.click`)
+
+목적:
+- 로그인 없이 접속 가능한 관제실형 모니터링 채팅 MVP
+- 좌측 이벤트 스트림 + 우측 요약 패널
+- 하단 고정 입력창 + 세션별 로컬 저장(localStorage)
+- OpenAI-compatible `/v1/chat/completions` 엔드포인트와 바로 연동
+
+레포 구조:
+- `monitor/index.html`: UI 레이아웃
+- `monitor/styles.css`: 반응형 관제실 스타일
+- `monitor/app.js`: 세션 저장/응답 요청/템플릿 강제
+- `monitor/CNAME`: `chat.okgo.click`
+- `monitor/.nojekyll`: 정적 파일 처리
+- `.github/workflows/pages-chat-monitor.yml`: GitHub Pages 자동 배포
+
+로컬 실행:
+
+```bash
+cd monitor
+node -e 'const http=require("http"),fs=require("fs"),path=require("path");const root=process.cwd();http.createServer((req,res)=>{const p=req.url==="/"?"index.html":req.url.slice(1);fs.readFile(path.join(root,p),(e,d)=>{if(e){res.statusCode=404;return res.end("not found");}res.end(d);});}).listen(4173)'
+# open http://localhost:4173
+```
+
+사용 방법:
+1. 우측 상단 `Settings`에서 Endpoint URL(예: `https://<host>/v1/chat/completions`) 입력
+2. 필요 시 API Key/Model 입력 후 Save
+3. 하단 입력창으로 커밋 로그/PR 상태/테스트/배포 로그를 전송
+4. 응답은 고정 포맷(상태 요약/이상 징후/구조 분석/개선/Top3 행동/고급 분석)으로 유지
+
+배포 (GitHub Pages):
+1. GitHub 저장소 `Settings -> Pages`에서 Source를 `GitHub Actions`로 설정
+2. `main` 브랜치에 `monitor/**` 변경이 push되면 `Deploy Chat Monitor to GitHub Pages` 워크플로우 실행
+3. DNS에서 `chat.okgo.click`을 GitHub Pages 도메인으로 연결
+4. 배포 후 `https://chat.okgo.click` 접속 확인
 
 ## Request Lifecycle (API -> Codex)
 
@@ -162,8 +220,33 @@ CLI list for prompt optimization (from env):
 - Runtime image: `ghcr.io/jungju/jgo:latest` (`Dockerfile`)
   - Kubernetes 상주 API 서버 + codex 실행 환경을 단일 이미지로 제공.
   - `main.go`를 포함하고 `go run /opt/jgo/main.go`로 실행.
-  - `openssh-server`, `codex`, `gh`, `kubectl`, `aws` 등을 포함.
-  - 컨테이너 시작 시 `sshd`를 함께 띄우고 localhost SSH로 codex를 실행한다.
+  - `codex`, `gh`, `kubectl`, `aws`, `openssh-client` 등을 포함.
+  - 기본 실행은 로컬 직접 실행(`JGO_EXEC_TRANSPORT=local`)이며 SSH 서버 기동이 필요 없다.
+  - 필요할 때만 `JGO_EXEC_TRANSPORT=ssh` + `JGO_SSH_*` 설정으로 원격 SSH 실행을 사용한다.
+
+## Recommended Remote Operation (지속 운영)
+
+`jgo`는 SSH 데몬을 내장하지 않으므로, 평소 자동화 처리는 API 모드(`JGO_EXEC_TRANSPORT=local`)로 운영하는 방식이 가장 안정적입니다.
+
+- API 테스트/운영 (권장)
+  ```bash
+  kubectl -n ai port-forward svc/jgo 8080:8080
+  curl -sS -H "Content-Type: application/json" \
+    -d '{"model":"jgo","messages":[{"role":"user","content":"ping"}],"stream":false}' \
+    http://127.0.0.1:8080/v1/chat/completions
+  ```
+
+- SSH는 디버깅/수동 확인용으로만 사용
+  - `jgo` 파드 자체는 SSH 서버를 띄우지 않으므로, `jgo` NodePort(예: 30110)로의 SSH 접근은 현재 권장하지 않습니다.
+  - 수동 셸이 필요하면 `workspace` SSH 노드포트를 사용하세요.
+    ```bash
+    ssh -p 32222 jgo@192.168.50.160
+    ```
+
+- SSH 기반 자동 실행이 필요할 때(고급 운영)
+  - 실행 모드: `JGO_EXEC_TRANSPORT=ssh`
+  - 대상: `JGO_SSH_USER=jgo`, `JGO_SSH_HOST=workspace`, `JGO_SSH_PORT=22`
+  - 단, `workspace` 측 `~/.ssh/authorized_keys`에 공개키가 선행 등록되어야 합니다.
 
 Manual first-run checklist (after container startup):
 
@@ -181,7 +264,7 @@ jgo-first-run-checklist
 - 최초 복사 시 marker file (`/home/jgo/.jgo-homefiles-initialized`)을 생성한다.
 - marker file이 있으면 재실행해도 `homefiles` 복사를 건너뛴다.
 - `~/.ssh/id_ed25519`, `~/.ssh/id_ed25519.pub`를 준비한다.
-- `~/.ssh/authorized_keys`에 `~/.ssh/id_ed25519.pub`를 포함한다.
+- `JGO_EXEC_TRANSPORT=ssh`일 때만 `~/.ssh/authorized_keys`에 `~/.ssh/id_ed25519.pub`를 포함한다.
 - 최초 복사 시 `~/.codex/config.toml`에 아래 설정을 보장한다.
   - `[sandbox_workspace_write]`
   - `network_access = true`
@@ -192,15 +275,13 @@ jgo-first-run-checklist
 - Cached data:
   - go build cache: `.jgo-cache/go-build`
   - go module cache (preloaded in image): `/home/jgo/.cache/go-mod` (override with `GOMODCACHE`)
-  - codex home: `.jgo-cache/codex`
+  - codex home: `~/.codex` (기본값)
 
 ## Environment Variables
 
-- Defaulted in container entrypoint:
-  - `JGO_SSH_USER=<USERNAME>` (default `jgo`)
-  - `JGO_SSH_HOST=localhost`
-  - `JGO_SSH_PORT=22`
-- Optional override (outside container/local dev):
+- Execution transport:
+  - `JGO_EXEC_TRANSPORT` (default: `local`, allowed: `local|ssh`)
+- Optional SSH target settings (used only when `JGO_EXEC_TRANSPORT=ssh`):
   - `JGO_SSH_USER`, `JGO_SSH_HOST`, `JGO_SSH_PORT`
 - Required when prompt optimization runs:
   - cases:
@@ -211,6 +292,7 @@ jgo-first-run-checklist
     - `OPENAI_BASE_URL` is optional (default: `https://api.openai.com/v1`)
     - To use OpenWebUI/LiteLLM endpoint, set `OPENAI_BASE_URL` explicitly
 - Optional:
+  - `CODEX_HOME` (default in image: `/home/jgo/.codex`)
   - `CODEX_BIN` (default: `codex`)
   - `JGO_LISTEN_ADDR` (default: `:8080`)
   - `JGO_OPTIMIZE_PROMPT` (default: `false`)
@@ -249,7 +331,30 @@ codex login
 ```
 
 `jgo` checks `codex login status` before execution.
-Ensure the matching public key is already registered on remote `~/.ssh/authorized_keys`.
+When `JGO_EXEC_TRANSPORT=ssh`, ensure the matching public key is already registered on remote `~/.ssh/authorized_keys`.
+
+## Verification Scripts
+
+`jgo` 운영 검증은 다음 명령으로 자동화할 수 있습니다.
+
+```bash
+# API smoke-test (k8s 서비스 기반 포트포워드)
+make smoke-test
+
+# Codex 로그인/실행 검증
+make codex-auth-test
+```
+
+환경이 다를 경우:
+
+```bash
+# API만 직접 URL로 검사
+make K8S_NAMESPACE=ai K8S_WORKLOAD=jgo K8S_SERVICE_PORT=8080 SMOKE_TEST_BASE_URL="http://127.0.0.1:18080" smoke-test
+
+# 로그인 상태를 강제 가정해서 검사
+make CODEX_AUTH_EXPECT=required codex-auth-test   # 로그인 미완료 케이스
+make CODEX_AUTH_EXPECT=ok codex-auth-test         # 로그인 완료 케이스(로그인된 환경 필요)
+```
 
 ## Environment Injection
 
@@ -259,6 +364,8 @@ Kubernetes example:
 
 ```yaml
 env:
+- name: JGO_EXEC_TRANSPORT
+  value: "local"
 - name: OPENAI_BASE_URL
   value: "http://litellm:4000/v1"
 - name: OPENAI_API_KEY
@@ -314,6 +421,6 @@ Codex 로그인 미완료 처리:
 
 1. Build execution environment from process environment variables.
 2. Optional: optimize prompt for Codex with OpenAI API (`JGO_OPTIMIZE_PROMPT=true` or `--optimize-prompt`).
-3. Validate `codex login status` on SSH target.
+3. Validate `codex login status` on selected target (local or SSH).
 4. Run `codex exec --full-auto --skip-git-repo-check "<prompt>"` once.
 5. Return Codex execution response text in OpenAI-compatible response content.

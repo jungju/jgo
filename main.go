@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -27,15 +28,22 @@ const (
 	defaultOpenAIBase = "https://api.openai.com/v1"
 	servedModelID     = "jgo"
 	defaultReasoning  = "xhigh"
+	defaultTransport  = "local"
+	transportLocal    = "local"
+	transportSSH      = "ssh"
+	maxRunHistorySize = 120
 )
 
 var errCodexLoginRequired = errors.New("codex login is required")
 
 var runCounter atomic.Uint64
+var runHistoryMu sync.Mutex
+var runHistory []runHistoryRecord
 
 type Config struct {
 	CodexBin        string
 	ListenAddr      string
+	ExecTransport   string
 	SSHUser         string
 	SSHHost         string
 	SSHPort         string
@@ -147,6 +155,17 @@ type openAIModel struct {
 
 type runIDContextKey struct{}
 
+type runHistoryRecord struct {
+	RunID       string `json:"run_id"`
+	Timestamp   string `json:"timestamp"`
+	Model       string `json:"model"`
+	DurationMs  int64  `json:"duration_ms"`
+	Instruction string `json:"instruction"`
+	Status      string `json:"status"`
+	Response    string `json:"response,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
 func main() {
 	cfg, err := loadConfigFromEnv()
 	if err != nil {
@@ -184,6 +203,7 @@ func serveCommand(cfg Config, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	listen := fs.String("listen", cfg.ListenAddr, "listen address")
+	transport := fs.String("transport", cfg.ExecTransport, "execution transport: local or ssh")
 	optimizePrompt := fs.Bool("optimize-prompt", cfg.OptimizePrompt, "enable prompt optimization before codex execution")
 
 	if err := fs.Parse(args); err != nil {
@@ -194,8 +214,9 @@ func serveCommand(cfg Config, args []string) error {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
 	}
+	cfg.ExecTransport = strings.TrimSpace(*transport)
 	cfg.OptimizePrompt = *optimizePrompt
-	if err := validateSSHConfig(&cfg); err != nil {
+	if err := validateExecutionConfig(&cfg); err != nil {
 		return err
 	}
 
@@ -204,8 +225,8 @@ func serveCommand(cfg Config, args []string) error {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  jgo serve [--optimize-prompt]")
-	fmt.Fprintln(os.Stderr, "  jgo exec [--env-file .env] [--optimize-prompt] \"<instruction>\"")
+	fmt.Fprintln(os.Stderr, "  jgo serve [--transport local|ssh] [--optimize-prompt]")
+	fmt.Fprintln(os.Stderr, "  jgo exec [--env-file .env] [--transport local|ssh] [--optimize-prompt] \"<instruction>\"")
 	fmt.Fprintln(os.Stderr, "default: jgo serve")
 }
 
@@ -214,6 +235,7 @@ func execCommand(cfg Config, args []string) error {
 	fs.SetOutput(os.Stderr)
 
 	envFile := fs.String("env-file", ".env", "path to env file")
+	transport := fs.String("transport", cfg.ExecTransport, "execution transport: local or ssh")
 	optimizePrompt := fs.Bool("optimize-prompt", cfg.OptimizePrompt, "enable prompt optimization before codex execution")
 
 	if err := fs.Parse(args); err != nil {
@@ -222,6 +244,16 @@ func execCommand(cfg Config, args []string) error {
 	if fs.NArg() == 0 {
 		return fmt.Errorf("missing instruction argument")
 	}
+	transportFlagSet := false
+	optimizePromptFlagSet := false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "transport":
+			transportFlagSet = true
+		case "optimize-prompt":
+			optimizePromptFlagSet = true
+		}
+	})
 
 	instruction := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	if instruction == "" {
@@ -238,8 +270,13 @@ func execCommand(cfg Config, args []string) error {
 		return err
 	}
 	cfg = reloadedCfg
-	cfg.OptimizePrompt = *optimizePrompt
-	if err := validateSSHConfig(&cfg); err != nil {
+	if transportFlagSet {
+		cfg.ExecTransport = strings.TrimSpace(*transport)
+	}
+	if optimizePromptFlagSet {
+		cfg.OptimizePrompt = *optimizePrompt
+	}
+	if err := validateExecutionConfig(&cfg); err != nil {
 		return err
 	}
 
@@ -281,6 +318,7 @@ func loadConfigFromEnv() (Config, error) {
 	cfg := Config{
 		CodexBin:        strings.TrimSpace(os.Getenv("CODEX_BIN")),
 		ListenAddr:      strings.TrimSpace(os.Getenv("JGO_LISTEN_ADDR")),
+		ExecTransport:   strings.TrimSpace(os.Getenv("JGO_EXEC_TRANSPORT")),
 		SSHUser:         strings.TrimSpace(os.Getenv("JGO_SSH_USER")),
 		SSHHost:         strings.TrimSpace(os.Getenv("JGO_SSH_HOST")),
 		SSHPort:         strings.TrimSpace(os.Getenv("JGO_SSH_PORT")),
@@ -293,6 +331,9 @@ func loadConfigFromEnv() (Config, error) {
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultListenAddr
+	}
+	if cfg.ExecTransport == "" {
+		cfg.ExecTransport = defaultTransport
 	}
 	if cfg.SSHUser == "" {
 		cfg.SSHUser = "jgo"
@@ -308,6 +349,30 @@ func loadConfigFromEnv() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func validateExecutionConfig(cfg *Config) error {
+	transport, err := normalizeTransport(cfg.ExecTransport)
+	if err != nil {
+		return err
+	}
+	cfg.ExecTransport = transport
+	if transport != transportSSH {
+		return nil
+	}
+	return validateSSHConfig(cfg)
+}
+
+func normalizeTransport(raw string) (string, error) {
+	transport := strings.ToLower(strings.TrimSpace(raw))
+	switch transport {
+	case "", transportLocal:
+		return transportLocal, nil
+	case transportSSH:
+		return transportSSH, nil
+	default:
+		return "", fmt.Errorf("invalid JGO_EXEC_TRANSPORT %q (expected: local or ssh)", raw)
+	}
 }
 
 func validateSSHConfig(cfg *Config) error {
@@ -368,6 +433,31 @@ func runServer(cfg Config) error {
 		modelsHandler(w, r)
 	})
 
+	runHistoryHandler := handleRunHistory()
+	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		runHistoryHandler(w, r)
+	})
+
+	monitorDir := resolveMonitorDir()
+	if monitorDir == "" {
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/" {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+				return
+			}
+			message := "jgo API server is running. static monitor assets were not found."
+			if _, err := w.Write([]byte(message)); err != nil {
+				log.Printf("root response failed: %v", err)
+			}
+		})
+	} else {
+		mux.Handle("/", http.FileServer(http.Dir(monitorDir)))
+	}
+
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           mux,
@@ -376,6 +466,100 @@ func runServer(cfg Config) error {
 
 	log.Printf("jgo server listening on %s", cfg.ListenAddr)
 	return server.ListenAndServe()
+}
+
+func handleRunHistory() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := parseRunHistoryLimit(r.URL.Query().Get("limit"))
+		items := snapshotRunHistory(limit)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"total": len(items),
+			"items": items,
+		})
+	}
+}
+
+func parseRunHistoryLimit(raw string) int {
+	if raw == "" {
+		return 20
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return 20
+	}
+	if n > maxRunHistorySize {
+		return maxRunHistorySize
+	}
+	return n
+}
+
+func appendRunHistory(runID, model, instruction, status, response, errorText string, elapsed time.Duration) {
+	entry := runHistoryRecord{
+		RunID:       runID,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Model:       model,
+		DurationMs:  elapsed.Milliseconds(),
+		Instruction: truncateForLog(instruction, 240),
+		Status:      status,
+		Response:    truncateForLog(response, 1500),
+		Error:       truncateForLog(errorText, 600),
+	}
+	if entry.Status == "completed" && entry.Response == "" {
+		entry.Response = "<empty response>"
+	}
+
+	runHistoryMu.Lock()
+	runHistory = append(runHistory, entry)
+	if len(runHistory) > maxRunHistorySize {
+		runHistory = runHistory[len(runHistory)-maxRunHistorySize:]
+	}
+	runHistoryMu.Unlock()
+}
+
+func snapshotRunHistory(limit int) []runHistoryRecord {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	runHistoryMu.Lock()
+	defer runHistoryMu.Unlock()
+	total := len(runHistory)
+	if limit > total {
+		limit = total
+	}
+	start := total - limit
+	out := make([]runHistoryRecord, 0, limit)
+	for i := total - 1; i >= start; i-- {
+		out = append(out, runHistory[i])
+	}
+	return out
+}
+
+func resolveMonitorDir() string {
+	mainFile := strings.TrimSpace(os.Getenv("JGO_MAIN_FILE"))
+	mainFileDir := "./monitor"
+	if mainFile != "" {
+		mainFileDir = filepath.Join(filepath.Dir(mainFile), "monitor")
+	}
+
+	candidates := []string{
+		strings.TrimSpace(os.Getenv("JGO_MONITOR_DIR")),
+		strings.TrimSpace(mainFileDir),
+		strings.TrimSpace(filepath.Join("/opt/jgo", "monitor")),
+		strings.TrimSpace(filepath.Join(".", "monitor")),
+	}
+
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		return candidate
+	}
+	return ""
 }
 
 func handleChatCompletions(cfg Config) http.HandlerFunc {
@@ -409,6 +593,21 @@ func handleChatCompletions(cfg Config) http.HandlerFunc {
 			return
 		}
 		logRunf(ctx, "instruction preview=%q", truncateForLog(instruction, 160))
+		runModel := strings.TrimSpace(req.Model)
+		if runModel == "" {
+			runModel = servedModelID
+		}
+		if runModel != servedModelID {
+			logRunf(ctx, "request rejected: unsupported model=%q", runModel)
+			writeOpenAIError(
+				w,
+				http.StatusBadRequest,
+				fmt.Sprintf("unsupported model %q; use %q (run_id=%s)", runModel, servedModelID, runID),
+			)
+			return
+		}
+
+		start := time.Now()
 
 		result, err := runAutomation(ctx, cfg, instruction)
 		if err != nil {
@@ -416,6 +615,7 @@ func handleChatCompletions(cfg Config) http.HandlerFunc {
 				msg := "codex가 로그인되어 있지 않습니다. 먼저 `codex login`을 실행한 뒤 다시 요청하세요."
 				logRunf(ctx, "automation blocked detail: %v", err)
 				logRunf(ctx, "automation blocked: %s", msg)
+				appendRunHistory(runID, runModel, instruction, "blocked", msg, "", time.Since(start))
 				if req.Stream {
 					if streamErr := writeStreamingChatCompletion(w, servedModelID, msg); streamErr != nil {
 						logRunf(ctx, "stream write failed: %v", streamErr)
@@ -426,25 +626,13 @@ func handleChatCompletions(cfg Config) http.HandlerFunc {
 				return
 			}
 			logRunf(ctx, "automation failed: %v", err)
+			appendRunHistory(runID, runModel, instruction, "failed", "", err.Error(), time.Since(start))
 			writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("%s (run_id=%s)", err.Error(), runID))
 			return
 		}
 
-		model := strings.TrimSpace(req.Model)
-		if model == "" {
-			model = servedModelID
-		}
-		if model != servedModelID {
-			logRunf(ctx, "request rejected: unsupported model=%q", model)
-			writeOpenAIError(
-				w,
-				http.StatusBadRequest,
-				fmt.Sprintf("unsupported model %q; use %q (run_id=%s)", model, servedModelID, runID),
-			)
-			return
-		}
-
 		content := result.CodexResponse
+		appendRunHistory(runID, runModel, instruction, "completed", content, "", time.Since(start))
 		if req.Stream {
 			if err := writeStreamingChatCompletion(w, servedModelID, content); err != nil {
 				logRunf(ctx, "stream write failed: %v", err)
@@ -649,7 +837,7 @@ func sanitizeURL(raw string) string {
 
 func runAutomation(ctx context.Context, cfg Config, instruction string) (AutomationResult, error) {
 	logRunf(ctx, "automation start")
-	if err := validateSSHConfig(&cfg); err != nil {
+	if err := validateExecutionConfig(&cfg); err != nil {
 		return AutomationResult{}, err
 	}
 	envMap := environToMap(os.Environ())
@@ -685,10 +873,14 @@ func runAutomation(ctx context.Context, cfg Config, instruction string) (Automat
 		logRunf(ctx, "stage=prompt_optimize skipped: enabled=false")
 	}
 
-	if _, err := exec.LookPath("ssh"); err != nil {
-		return AutomationResult{}, fmt.Errorf("ssh is required in PATH: %w", err)
+	if cfg.ExecTransport == transportSSH {
+		if _, err := exec.LookPath("ssh"); err != nil {
+			return AutomationResult{}, fmt.Errorf("ssh is required in PATH when JGO_EXEC_TRANSPORT=ssh: %w", err)
+		}
+		logRunf(ctx, "transport=ssh target=%s", formatSSHAddress(cfg))
+	} else {
+		logRunf(ctx, "transport=local target=local")
 	}
-	logRunf(ctx, "transport binary found: ssh (target=%s)", formatSSHAddress(cfg))
 
 	codexEnv := mapToEnviron(envMap)
 	logRunf(ctx, "stage=codex_login_check start")
@@ -842,10 +1034,41 @@ func parseRequestPlan(raw string) (RequestPlan, error) {
 
 func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error {
 	args := []string{"login", "status"}
-	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
-	sshArgs := buildSSHArgs(cfg, codexCommand)
-	logRunf(ctx, "codex command: %s", formatCommand("ssh", sshArgs...))
-	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+	target := formatExecutionTarget(cfg)
+	if cfg.ExecTransport == transportSSH {
+		codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
+		sshArgs := buildSSHArgs(cfg, codexCommand)
+		logRunf(ctx, "codex command: %s", formatCommand("ssh", sshArgs...))
+		cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+		cmd.Env = codexEnv
+		out, err := cmd.CombinedOutput()
+		logCommandOutput(ctx, "codex login status", out)
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg == "" {
+				msg = err.Error()
+			}
+			if isCodexLoginRequiredOutput(msg) {
+				return fmt.Errorf(
+					"%w; target=%s cmd=%s detail=%s",
+					errCodexLoginRequired,
+					target,
+					formatCommand(cfg.CodexBin, args...),
+					msg,
+				)
+			}
+			return fmt.Errorf(
+				"codex login check failed (target=%s cmd=%s): %s",
+				target,
+				formatCommand(cfg.CodexBin, args...),
+				msg,
+			)
+		}
+		return nil
+	}
+
+	logRunf(ctx, "codex command: %s", formatCommand(cfg.CodexBin, args...))
+	cmd := exec.CommandContext(ctx, cfg.CodexBin, args...)
 	cmd.Env = codexEnv
 	out, err := cmd.CombinedOutput()
 	logCommandOutput(ctx, "codex login status", out)
@@ -858,14 +1081,14 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 			return fmt.Errorf(
 				"%w; target=%s cmd=%s detail=%s",
 				errCodexLoginRequired,
-				formatSSHAddress(cfg),
+				target,
 				formatCommand(cfg.CodexBin, args...),
 				msg,
 			)
 		}
 		return fmt.Errorf(
 			"codex login check failed (target=%s cmd=%s): %s",
-			formatSSHAddress(cfg),
+			target,
 			formatCommand(cfg.CodexBin, args...),
 			msg,
 		)
@@ -876,21 +1099,35 @@ func ensureCodexLogin(ctx context.Context, cfg Config, codexEnv []string) error 
 func runCodexExec(ctx context.Context, cfg Config, codexEnv []string, prompt string) (string, error) {
 	reasoningArg := fmt.Sprintf("reasoning_effort=%q", cfg.ReasoningEffort)
 	args := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", reasoningArg, prompt}
-	codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
-	sshArgs := buildSSHArgs(cfg, codexCommand)
-
-	// Avoid logging the full inline prompt while still reflecting argument-mode execution.
 	logArgs := []string{"exec", "--full-auto", "--skip-git-repo-check", "-c", reasoningArg, "<inline-prompt>"}
-	logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
-	logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
-	logRunf(
-		ctx,
-		"codex command: %s (prompt_len=%d prompt_preview=%q)",
-		formatCommand("ssh", logSSHArgs...),
-		len(prompt),
-		truncateForLog(prompt, 240),
-	)
-	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+	var cmd *exec.Cmd
+	target := formatExecutionTarget(cfg)
+	if cfg.ExecTransport == transportSSH {
+		codexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, args...))
+		sshArgs := buildSSHArgs(cfg, codexCommand)
+		logCodexCommand := wrapBashLoginCommand(formatCommand(cfg.CodexBin, logArgs...))
+		logSSHArgs := buildSSHArgs(cfg, logCodexCommand)
+		logRunf(
+			ctx,
+			"codex command: %s (target=%s prompt_len=%d prompt_preview=%q)",
+			formatCommand("ssh", logSSHArgs...),
+			target,
+			len(prompt),
+			truncateForLog(prompt, 240),
+		)
+		cmd = exec.CommandContext(ctx, "ssh", sshArgs...)
+	} else {
+		logRunf(
+			ctx,
+			"codex command: %s (target=%s prompt_len=%d prompt_preview=%q)",
+			formatCommand(cfg.CodexBin, logArgs...),
+			target,
+			len(prompt),
+			truncateForLog(prompt, 240),
+		)
+		cmd = exec.CommandContext(ctx, cfg.CodexBin, args...)
+	}
+
 	cmd.Env = codexEnv
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
@@ -948,6 +1185,13 @@ func formatSSHAddress(cfg Config) string {
 		return target
 	}
 	return target + ":" + port
+}
+
+func formatExecutionTarget(cfg Config) string {
+	if cfg.ExecTransport == transportSSH {
+		return formatSSHAddress(cfg)
+	}
+	return "local"
 }
 
 func buildWorkspacePrompt(optimizedPrompt string, availableCLIs []string) string {
