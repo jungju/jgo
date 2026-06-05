@@ -19,7 +19,7 @@ Primary objective: let Codex perform real work through available CLIs (`gh`, `aw
 - Container images:
   - `Dockerfile`: 단일 런타임/워크스페이스 이미지 정의(`codex`, `gh`, `kubectl`, `aws`, `openssh-client` + `main.go` 실행 포함).
 - Tooling:
-- `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
+  - `Makefile`: `docker-push`, `push`, `run-full`, `ssh-key`, `deploy-check` 제공.
   - self-growth loop dry-run: `make ghost-grow`
   - autonomous dev loop scaffold: `make autonomous-loop PROMPT="task text"`
 - Chat monitor site (MVP):
